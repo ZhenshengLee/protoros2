@@ -1,0 +1,6 @@
+repositories:
+  # ros2 lyrical core packages for protoros2
+  rosidl_typesupport_protobuf:
+    type: git
+    url: https://github.com/ZhenshengLee/rosidl_typesupport_protobuf
+    branch: lyrical-dev

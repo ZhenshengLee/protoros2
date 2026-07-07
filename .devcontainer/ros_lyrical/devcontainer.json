@@ -1,0 +1,62 @@
+{
+  "name": "ros-lyrical-devc",
+  // "image": "ros:lyrical-devc",
+  "build": {
+    "dockerfile": "ros_lyrical_devc.dockerfile",
+    "context": "../..",
+    "options": [
+      "--network=host"
+    ],
+    "args": {
+      "USERNAME": "${localEnv:USER}"
+    }
+  },
+  "privileged": true,
+  "workspaceMount": "source=${localWorkspaceFolder},target=/gw_demo,type=bind",
+  "workspaceFolder": "/gw_demo",
+  "runArgs": [
+    "--net=host",
+    "--shm-size=2G",
+    "--hostname=in-ros-devc-docker",
+    "--add-host=in-ros-devc-docker:127.0.0.1"
+  ],
+  "containerEnv": {
+    "DOCKER_USER": "${localEnv:USER}",
+    "USER": "${localEnv:USER}",
+    "DOCKER_USER_ID": "${localEnv:UID}",
+    "DOCKER_GRP": "${localEnv:USER}",
+    "DOCKER_GRP_ID": "${localEnv:GID}",
+    "DOCKER_IMG": "ros:lyrical-devc",
+    "USE_GPU": "1",
+    "NVIDIA_VISIBLE_DEVICES": "all",
+    "NVIDIA_DRIVER_CAPABILITIES": "compute,video,utility",
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "TERM": "xterm-256color",
+    "BUILD_THIRD_PARTY_FLAG": "false",
+    "HISTFILE": "/gw_demo/.dev_bash_hist"
+  },
+  "mounts": [
+    "source=${localEnv:HOME}/.cache,target=${localEnv:HOME}/.cache,type=bind",
+    "source=${localEnv:HOME}/.ssh,target=${localEnv:HOME}/.ssh,type=bind",
+    "source=/dev/bus/usb,target=/dev/bus/usb,type=bind",
+    "source=/media,target=/media,type=bind",
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+    "source=/etc/localtime,target=/etc/localtime,type=bind,readonly",
+    "source=/usr/src,target=/usr/src,type=bind",
+    "source=/lib/mgaules,target=/lib/mgaules,type=bind"
+  ],
+  "postCreateCommand": "bash -c /gw_demo/docker/scripts/ros_devc.sh",
+  "remoteUser": "${localEnv:USER}",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        // avoid lock with ~/.cache/vscode-cpptools/
+        "C_Cpp.intelliSenseCachePath": "${userHome}/.cache/vscode-cpptools-cache-${devcontainerId}"
+      },
+      "extensions": [
+        "ms-vscode.cpptools"
+      ]
+    }
+  }
+}
