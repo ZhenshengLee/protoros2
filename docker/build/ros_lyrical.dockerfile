@@ -1,9 +1,12 @@
 # https://yeasy.gitbook.io/docker_practice/image/build
-# docker build -t ros:lyrical-dev -f ./docker/build/ros_lyrical.dockerfile . --network=host
-# docker save ros:lyrical-dev | pzstd -c > ros-lyrical-dev_$(TZ=Asia/Shanghai date +%y%m%d).tzst
+# docker build -t ros:lyrical-dev -f ./docker/build/ros_lyrical.dockerfile . --network=host --build-arg GA_FTP_SERVER=$(ip route show default | cut -d' ' -f3)
+# docker save ros:lyrical-ros-base-resolute ros:lyrical-dev | pzstd -c > ros-lyrical-dev_$(TZ=Asia/Shanghai date +%y%m%d).tzst
+
+# add ecal prebuilt(u20.04+gcc9.4+pb3.21.7) binary
 
 FROM ros:lyrical-ros-base-resolute
 
+ARG GA_FTP_SERVER=192.168.160.1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
@@ -22,6 +25,11 @@ RUN set -x; \
     && pip3 config set global.trusted-host https://pypi.tuna.tsinghua.edu.cn \
     && pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
     && python3 -m pip install rosbags \
+    && wget --ftp-user=zs --ftp-password=zs -q -O- ftp://${GA_FTP_SERVER}/DiskT/docker_res/dbg/tmux_plugins.tgz | tar -xz -C /opt \
+    && mkdir -p /opt/gsd/x86_64/ \
+    && wget --ftp-user=zs --ftp-password=zs -q -O- ftp://${GA_FTP_SERVER}/DiskT/docker_res/3rdparty/ecal-5.13-x86-gcc9.4.0.tgz | tar -xz -C /opt/gsd/x86_64/ \
+    && wget --ftp-user=zs --ftp-password=zs -q -O /usr/bin/mcap ftp://${GA_FTP_SERVER}/DiskT/docker_res/mlops/mcap-linux-amd64 \
+    && chmod 755 /usr/bin/mcap \
     && rm -rf /var/lib/apt/lists/* \
     && rm /etc/apt/sources.list.d/ubuntu.sources \
     && mv /etc/apt/sources.list.d/ubuntu.sources.bak /etc/apt/sources.list.d/ubuntu.sources

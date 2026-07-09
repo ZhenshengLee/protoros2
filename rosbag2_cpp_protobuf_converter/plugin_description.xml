@@ -1,0 +1,9 @@
+<library path="rosbag2_cpp_protobuf_converter">
+  <class
+    name="protobuf_converter"
+    type="rosbag2_cpp_protobuf_converter::ProtobufConverter"
+    base_class_type="rosbag2_cpp::converter_interfaces::SerializationFormatConverter"
+  >
+    <description>This is a converter plugin for protobuf serialization format.</description>
+  </class>
+</library>

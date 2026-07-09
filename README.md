@@ -6,6 +6,8 @@ the name of this repo is inspired by [flatros2](https://github.com/Ekumen-OS/fla
 
 ### motivation
 
+there is old and strong demand for protobuf serialization in ros2, see [the developer of apollo suggest using protobuf in ros1(ros_comm) in 2017](https://github.com/ros/ros_comm/issues/1085)
+
 ### related work
 
 [the fork of rosidl_typesupport_protobuf for lyrical](https://github.com/PranavDhulipala/rosidl_typesupport_protobuf)
@@ -52,6 +54,54 @@ ros2 run protoros2_example rosbag2_reader.py ./proto_msg_rmw_default/
 ros2 run protoros2_example rosbags_reader.py ./proto_msg_rmw_default/
 ```
 
+#### ucA.2: run with rmw that support cdr and protobuf
+
+need to import rmw_ecal
+
+```sh
+cd ./3rdparty
+vcs import < ../ecal.repos
+```
+
+use rmw_ecal_dynamic_cpp only support cdr, will be like with rmw_fastrtps_dynamic_cpp
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_dynamic_cpp
+# rclcpp
+ros2 run protoros2_example example_proto_publisher
+ros2 run protoros2_example example_proto_subscriber
+# rclpy
+ros2 topic list
+ros2 topic echo /proto_msg_topic
+# rosbag2
+ros2 bag record -o proto_msg_rmw_ecal_dynamic --topics /proto_msg_topic
+ros2 bag info ./proto_msg_rmw_ecal_dynamic/
+# badreader
+ros2 run protoros2_example rosbag2_reader.py ./proto_msg_rmw_ecal_dynamic/
+ros2 run protoros2_example rosbags_reader.py ./proto_msg_rmw_ecal_dynamic/
+# mlops
+mcap info ./proto_msg_rmw_ecal_dynamic/0_*.mcap
+```
+
+use rmw_ecal_proto_cpp only support protobuf, will use protobuf serdes in rmw layer
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+# rclcpp
+ros2 run protoros2_example example_proto_publisher
+ros2 run protoros2_example example_proto_subscriber
+# rclpy
+ros2 topic list
+ros2 topic echo /proto_msg_topic
+# rosbag2
+ros2 bag record -o proto_msg_rmw_ecal_proto --topics /proto_msg_topic -f protobuf
+ros2 bag info ./proto_msg_rmw_ecal_proto/
+# badreader
+ros2 run protoros2_example rosbag2_reader.py ./proto_msg_rmw_ecal_proto/
+ros2 run protoros2_example rosbags_reader.py ./proto_msg_rmw_ecal_proto/ # not supported currently
+# mlops
+mcap info ./proto_msg_rmw_ecal_proto/0_*.mcap
+```
 
 ## acknowledgement
 
