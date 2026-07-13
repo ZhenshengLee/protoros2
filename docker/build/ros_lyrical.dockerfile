@@ -24,7 +24,7 @@ RUN set -x; \
     && apt install -y libprotobuf-dev protobuf-compiler \
     && pip3 config set global.trusted-host https://pypi.tuna.tsinghua.edu.cn \
     && pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
-    && python3 -m pip install rosbags \
+    && python3 -m pip install rosbags mcap protobuf==5.29.6 \
     && wget --ftp-user=zs --ftp-password=zs -q -O- ftp://${GA_FTP_SERVER}/DiskT/docker_res/dbg/tmux_plugins.tgz | tar -xz -C /opt \
     && mkdir -p /opt/gsd/x86_64/ \
     && wget --ftp-user=zs --ftp-password=zs -q -O- ftp://${GA_FTP_SERVER}/DiskT/docker_res/3rdparty/ecal-5.13-x86-gcc9.4.0.tgz | tar -xz -C /opt/gsd/x86_64/ \

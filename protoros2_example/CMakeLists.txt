@@ -43,6 +43,8 @@ install(TARGETS
 install(PROGRAMS
   scripts/rosbag2_reader.py
   scripts/rosbags_reader.py
+  scripts/mcap_ros2_reader.py
+  scripts/mcap_proto_reader.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

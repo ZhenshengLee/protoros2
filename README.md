@@ -49,12 +49,16 @@ ros2 bag info ./proto_msg_rmw_default/
 # rosbag2 using protobuf serialization plugin protobuf, will convert cdr to protobuf in runtime
 # note: currently the protobuf converter plugin is not available in the official rosbag2
 # ros2 bag record -o proto_msg_rmw_default --topics /proto_msg_topic -f protobuf
-# badreader example
+# bagreader example
 ros2 run protoros2_example rosbag2_reader.py ./proto_msg_rmw_default/
 ros2 run protoros2_example rosbags_reader.py ./proto_msg_rmw_default/
+# mlops
+mcap info ./proto_msg_rmw_default/0_*.mcap
+ros2 run protoros2_example mcap_ros2_reader.py ./proto_msg_rmw_default/0_*.mcap
+ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_default/0_*.mcap
 ```
 
-#### ucA.2: run with rmw that support cdr and protobuf
+#### ucA.2: run with rmw that support cdr and protobuf separately
 
 need to import rmw_ecal
 
@@ -76,11 +80,13 @@ ros2 topic echo /proto_msg_topic
 # rosbag2
 ros2 bag record -o proto_msg_rmw_ecal_dynamic --topics /proto_msg_topic
 ros2 bag info ./proto_msg_rmw_ecal_dynamic/
-# badreader
+# bagreader
 ros2 run protoros2_example rosbag2_reader.py ./proto_msg_rmw_ecal_dynamic/
 ros2 run protoros2_example rosbags_reader.py ./proto_msg_rmw_ecal_dynamic/
 # mlops
 mcap info ./proto_msg_rmw_ecal_dynamic/0_*.mcap
+ros2 run protoros2_example mcap_ros2_reader.py ./proto_msg_rmw_ecal_dynamic/0_*.mcap
+ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_ecal_dynamic/0_*.mcap
 ```
 
 use rmw_ecal_proto_cpp only support protobuf, will use protobuf serdes in rmw layer
@@ -96,13 +102,17 @@ ros2 topic echo /proto_msg_topic
 # rosbag2
 ros2 bag record -o proto_msg_rmw_ecal_proto --topics /proto_msg_topic -f protobuf
 ros2 bag info ./proto_msg_rmw_ecal_proto/
-# badreader
+# bagreader
 ros2 run protoros2_example rosbag2_reader.py ./proto_msg_rmw_ecal_proto/
 ros2 run protoros2_example rosbags_reader.py ./proto_msg_rmw_ecal_proto/ # not supported currently
 # mlops
 mcap info ./proto_msg_rmw_ecal_proto/0_*.mcap
+ros2 run protoros2_example mcap_ros2_reader.py ./proto_msg_rmw_ecal_proto/0_*.mcap
+ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_ecal_proto/0_*.mcap
 ```
 
 ## acknowledgement
+
+[agy-cli](https://antigravity.google/docs/cli/overview)
 
 ## todo
