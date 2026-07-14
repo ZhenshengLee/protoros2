@@ -111,6 +111,40 @@ ros2 run protoros2_example mcap_ros2_reader.py ./proto_msg_rmw_ecal_proto/0_*.mc
 ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_ecal_proto/0_*.mcap
 ```
 
+#### ucA.3: run with rmw that support cdr and protobuf simultaneously
+
+that's the case when: the rosidl(msg) that is not compiled with protobuf typesupport.
+
+note: when in fallback mode, the cdr serdes data in the bag will be flagged as protobuf, but the actual data is cdr.
+
+##### ucA.3.1: run with rmw_ecal_proto_cpp
+
+`rmw_ecal_proto_cpp` now supports cdr and protobuf simultaneously (with automatic fallback to cdr when protobuf typesupport is not available).
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+# 1. rclcpp with prebuilt binary with cdr typesupport only (fallback to cdr)
+# example_interface/msg/String.msg has not been compiled with rosidl_typesupport_protobuf, thus dont have protobuf typesupport
+ros2 run demo_nodes_cpp talker
+ros2 run demo_nodes_cpp listener
+# 2. rclcpp with protobuf typesupport
+ros2 run protoros2_example example_proto_publisher
+ros2 run protoros2_example example_proto_subscriber
+# 3. rclpy
+ros2 topic list
+ros2 topic echo /chatter
+ros2 topic echo /proto_msg_topic
+# 4. rosbag2 record & info (simultaneous cdr + protobuf topics)
+ros2 bag record -o proto_msg_rmw_ecal_both --topics /chatter /proto_msg_topic
+ros2 bag info ./proto_msg_rmw_ecal_both/
+# 5. bagreader
+ros2 run protoros2_example rosbag2_reader.py ./proto_msg_rmw_ecal_both/
+# 6. mlops
+mcap info ./proto_msg_rmw_ecal_both/0_*.mcap
+ros2 run protoros2_example mcap_ros2_reader.py ./proto_msg_rmw_ecal_both/0_*.mcap
+ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_ecal_both/0_*.mcap
+```
+
 ## acknowledgement
 
 [agy-cli](https://antigravity.google/docs/cli/overview)

@@ -26,6 +26,7 @@ except ImportError:
 def find_package_share_dir(package_name: str) -> str:
     """寻找 ROS 2 package share 目录候选路径"""
     search_dirs = [
+        f"/opt/ros/lyrical/share/{package_name}",
         f"/gw_demo/target/colcon/install/share/{package_name}",
         f"./target/colcon/install/share/{package_name}",
         f"../target/colcon/install/share/{package_name}",
@@ -79,6 +80,17 @@ class DynamicProtoDecoder:
         self.msg_classes[topic_type] = msg_class
         return msg_class
 
+    def has_proto(self, topic_type: str) -> bool:
+        parts = topic_type.split("/")
+        if len(parts) != 3:
+            return False
+        package_name, _, message_name = parts
+        share_dir = find_package_share_dir(package_name)
+        if not share_dir:
+            return False
+        proto_path = os.path.join(share_dir, "msg", f"{message_name}.proto")
+        return os.path.exists(proto_path)
+
     def decode(self, topic_type: str, data: bytes):
         msg_class = self.get_message_class(topic_type)
         msg = msg_class()
@@ -109,8 +121,12 @@ def read_pure_mcap(mcap_path: str):
                 f"Size: {len(message.data)} bytes | Encoding: '{encoding}'"
             )
 
-            # 自适应解析
-            if encoding == "protobuf":
+            # 智能兼容中间件 Fallback 模式：当录制时默认打标为 protobuf，但在 Share 目录未发现 .proto 描述文件时，自动转为 CDR 反序列化
+            effective_encoding = encoding
+            if encoding == "protobuf" and not proto_decoder.has_proto(topic_type):
+                effective_encoding = "cdr"
+
+            if effective_encoding == "protobuf":
                 try:
                     pb_msg = proto_decoder.decode(topic_type, message.data)
                     if hasattr(pb_msg, "message"):
@@ -121,7 +137,7 @@ def read_pure_mcap(mcap_path: str):
                 except Exception as e:
                     print(f"    -> [Protobuf 纯生解析失败] {e}", file=sys.stderr)
 
-            elif encoding == "cdr":
+            elif effective_encoding == "cdr":
                 if HAS_ROSBAGS:
                     try:
                         typestore = get_typestore(Stores.LATEST)

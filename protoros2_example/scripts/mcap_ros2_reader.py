@@ -74,6 +74,20 @@ class DynamicProtoDecoder:
         self.msg_classes[topic_type] = msg_class
         return msg_class
 
+    def has_proto(self, topic_type: str) -> bool:
+        parts = topic_type.split("/")
+        if len(parts) != 3:
+            return False
+        package_name, _, message_name = parts
+        try:
+            share_dir = get_package_share_directory(package_name)
+        except Exception:
+            share_dir = f"/gw_demo/target/colcon/install/share/{package_name}"
+            if not os.path.exists(share_dir):
+                share_dir = f"./target/colcon/install/share/{package_name}"
+        proto_path = os.path.join(share_dir, "msg", f"{message_name}.proto")
+        return os.path.exists(proto_path)
+
     def decode(self, topic_type: str, data: bytes):
         msg_class = self.get_message_class(topic_type)
         msg = msg_class()
@@ -104,8 +118,12 @@ def read_mcap_bag(mcap_path: str):
                 f"Size: {len(message.data)} bytes | Encoding: '{encoding}'"
             )
 
-            # 自适应解析
-            if encoding == "protobuf":
+            # 智能兼容中间件 Fallback 模式：当录制时默认打标为 protobuf，但在 Share 目录未发现 .proto 描述文件时，自动转为 CDR 反序列化
+            effective_encoding = encoding
+            if encoding == "protobuf" and not proto_decoder.has_proto(topic_type):
+                effective_encoding = "cdr"
+
+            if effective_encoding == "protobuf":
                 try:
                     pb_msg = proto_decoder.decode(topic_type, message.data)
                     # 尝试读取和打印消息字段
@@ -118,7 +136,7 @@ def read_mcap_bag(mcap_path: str):
                 except Exception as e:
                     print(f"    -> [Protobuf 解码失败] {e}", file=sys.stderr)
 
-            elif encoding == "cdr":
+            elif effective_encoding == "cdr":
                 try:
                     msg_class = get_message(topic_type)
                     if msg_class:
