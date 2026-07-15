@@ -21,7 +21,7 @@ RUN set -x; \
     && apt install -y sudo lsb-release wget cmake bc parallel pigz tmux netcat-openbsd \
     && apt install -y nano gdb gdbserver python3-numpy python3-pip python3-netifaces git rapidjson-dev apt-transport-https gnupg patchelf libacl1-dev software-properties-common python-is-python3 \
     && apt install -y systemd strace ltrace kmod \
-    && apt install -y libprotobuf-dev protobuf-compiler \
+    && apt install -y clang-tidy libprotobuf-dev protobuf-compiler python3-inflection python3-multipledispatch python3-networkx python3-scipy \
     && apt install -y ros-lyrical-demo-nodes-cpp \
     && pip3 config set global.trusted-host https://pypi.tuna.tsinghua.edu.cn \
     && pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \

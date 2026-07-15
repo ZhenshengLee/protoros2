@@ -1,0 +1,6 @@
+repositories:
+  # ros2 lyrical proto2ros packages for protoros2
+  proto2ros:
+    type: git
+    url: https://github.com/ZhenshengLee/proto2ros
+    branch: lyrical-dev

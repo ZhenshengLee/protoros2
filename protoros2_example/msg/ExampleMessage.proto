@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+// must follow: <ros2_package_name>.<folder_name>.pb
+package protoros2_example.msg.pb;
+
+message ExampleMessage
+{
+  string message = 1;
+}

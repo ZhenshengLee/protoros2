@@ -31,7 +31,7 @@ vcs import < ../ros2-core.repos
 
 ## demo
 
-### usecaseA: use rosidl(msg) as the single source of truth
+### usecaseA: use rosidl(msg) as the SSOT(single source of truth)
 
 #### ucA.1: run with rmw that support cdr only
 
@@ -46,9 +46,6 @@ ros2 topic echo /proto_msg_topic
 # rosbag2 using default serialization plugin which is cdr, will not convert
 ros2 bag record -o proto_msg_rmw_default --topics /proto_msg_topic
 ros2 bag info ./proto_msg_rmw_default/
-# rosbag2 using protobuf serialization plugin protobuf, will convert cdr to protobuf in runtime
-# note: currently the protobuf converter plugin is not available in the official rosbag2
-# ros2 bag record -o proto_msg_rmw_default --topics /proto_msg_topic -f protobuf
 # bagreader example
 ros2 run protoros2_example rosbag2_reader.py ./proto_msg_rmw_default/
 ros2 run protoros2_example rosbags_reader.py ./proto_msg_rmw_default/
@@ -60,7 +57,7 @@ ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_default/0_*.mcap
 
 #### ucA.2: run with rmw that support cdr and protobuf separately
 
-need to import rmw_ecal
+need to import rmw_ecal (use the fork rather than the official repo)
 
 ```sh
 cd ./3rdparty
@@ -143,6 +140,69 @@ ros2 run protoros2_example rosbag2_reader.py ./proto_msg_rmw_ecal_both/
 mcap info ./proto_msg_rmw_ecal_both/0_*.mcap
 ros2 run protoros2_example mcap_ros2_reader.py ./proto_msg_rmw_ecal_both/0_*.mcap
 ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_ecal_both/0_*.mcap
+```
+
+### usecaseB: use proto as the SSOT
+
+need to import proto2ros (use the fork rather than the official repo)
+
+```sh
+cd ./3rdparty
+vcs import < ../rai.repos
+```
+
+#### ucB.1: proto2ros coexists with rosidl_typesupport_protobuf
+
+turn on the cmake option(default OFF)
+
+```cmake
+option(PROTO_SSOT "Use Proto file as Single Source of Truth via proto2ros" ON)
+```
+
+the arch is as follows:
+
+```
+           [ Left Branch: Use Case A ]                 [ Right Branch: Use Case B ]
+           ROS 2 Native Stream (.msg SSOT)             AI / Robotics Stream (.proto SSOT)
+                         │                                           │
+                         ▼                                           ▼
+               rosidl_generate_interfaces                proto2ros (Generate Mirror IDL)
+                         │                                           │
+                         ▼                                           │
+          [ Translator: .msg -> synthetic .proto ]                   │ (Direct SSOT .proto)
+                         │                                           │
+                         └─────────────────────┬─────────────────────┘
+                                               ▼
+                             [ Shared Backbone: TypeSupport Engine ]
+                     rosidl_typesupport_protobuf (Unified Generator Engine):
+                 Generates C++ TypeSupport Handle, TypeAdapter & Proto Serdes
+                                               │
+                                               ▼
+                       [ rmw_ecal_proto_cpp: Direct Zero-Overhead Serdes ]
+```
+
+note: the proto definition must follow the rule: <ros2_package_name>.<folder_name>.pb
+
+note: use any of rmw above should be ok, take rmw_ecal_proto_cpp for example
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+# rclcpp
+ros2 run protoros2_example example_proto_publisher
+ros2 run protoros2_example example_proto_subscriber
+# rclpy
+ros2 topic list
+ros2 topic echo /proto_msg_topic
+# rosbag2
+ros2 bag record -o proto_msg_rmw_ecal_proto --topics /proto_msg_topic -f protobuf
+ros2 bag info ./proto_msg_rmw_ecal_proto/
+# bagreader
+ros2 run protoros2_example rosbag2_reader.py ./proto_msg_rmw_ecal_proto/
+ros2 run protoros2_example rosbags_reader.py ./proto_msg_rmw_ecal_proto/ # not supported currently
+# mlops
+mcap info ./proto_msg_rmw_ecal_proto/0_*.mcap
+ros2 run protoros2_example mcap_ros2_reader.py ./proto_msg_rmw_ecal_proto/0_*.mcap
+ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_ecal_proto/0_*.mcap
 ```
 
 ## acknowledgement

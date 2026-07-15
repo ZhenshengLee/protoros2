@@ -20,19 +20,32 @@ find_package(rosidl_typesupport_protobuf_cpp REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(rosbag2_py REQUIRED)
 
-rosidl_generate_interfaces(${PROJECT_NAME}
-  # https://github.com/intrinsic-opensource/ros-central-registry/blob/lyrical/2026-06-08/examples/msg/ExampleMessage.msg
-  "msg/ExampleMessage.msg"
-  DEPENDENCIES
-)
+option(PROTO_SSOT "Use Proto file as Single Source of Truth via proto2ros" OFF)
+
+if(PROTO_SSOT)
+  message(STATUS "Using PROTO_SSOT (proto2ros via protoros2 wrapper) for ${PROJECT_NAME}")
+  find_package(protoros2 REQUIRED)
+  proto2ros_vendor_package(${PROJECT_NAME}
+    PROTOS "msg/ExampleMessage.proto"
+  )
+  set(CONVERSIONS_LIB ${PROJECT_NAME}_conversions)
+else()
+  message(STATUS "Using standard rosidl_generate_interfaces (msg/ExampleMessage.msg) for ${PROJECT_NAME}")
+  rosidl_generate_interfaces(${PROJECT_NAME}
+    "msg/ExampleMessage.msg"
+    DEPENDENCIES
+  )
+  set(CONVERSIONS_LIB "")
+endif()
+
 rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_cpp")
 rosidl_get_typesupport_target(protobuf_cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_protobuf_cpp")
 
 add_executable(example_proto_publisher ./src/example_proto_publisher.cpp)
-target_link_libraries(example_proto_publisher PRIVATE rclcpp::rclcpp std_msgs::std_msgs ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp)
+target_link_libraries(example_proto_publisher PRIVATE rclcpp::rclcpp std_msgs::std_msgs ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
 
 add_executable(example_proto_subscriber ./src/example_proto_subscriber.cpp)
-target_link_libraries(example_proto_subscriber PRIVATE rclcpp::rclcpp std_msgs::std_msgs ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp)
+target_link_libraries(example_proto_subscriber PRIVATE rclcpp::rclcpp std_msgs::std_msgs ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
 
 install(TARGETS
   example_proto_publisher

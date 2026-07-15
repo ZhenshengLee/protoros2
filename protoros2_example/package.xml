@@ -16,6 +16,8 @@
   <buildtool_depend>rosidl_default_generators</buildtool_depend>
 
   <depend>rosidl_typesupport_protobuf_cpp</depend>
+  <depend>proto2ros</depend>
+  <depend>protoros2</depend>
 
   <depend>rclpy</depend>
   <depend>rosbag2_py</depend>
