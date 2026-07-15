@@ -20,17 +20,30 @@ find_package(rosidl_typesupport_protobuf_cpp REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(rosbag2_py REQUIRED)
 
-option(PROTO_SSOT "Use Proto file as Single Source of Truth via proto2ros" OFF)
+option(PROTO_SSOT "Use Proto file coexisting with rosidl_typesupport_protobuf (ucB.1)" OFF)
+option(PROTO_SSOT_ONLY "Use Proto file as the ONLY SSOT directly, bypassing rosidl_adapter_proto (ucB.2)" OFF)
 
-if(PROTO_SSOT)
-  message(STATUS "Using PROTO_SSOT (proto2ros via protoros2 wrapper) for ${PROJECT_NAME}")
+if(PROTO_SSOT AND PROTO_SSOT_ONLY)
+  message(FATAL_ERROR "PROTO_SSOT (ucB.1) and PROTO_SSOT_ONLY (ucB.2) cannot both be ON simultaneously!")
+endif()
+
+if(PROTO_SSOT_ONLY)
+  message(STATUS "Using PROTO_SSOT_ONLY (pure .proto SSOT via protoros2 wrapper, ucB.2) for ${PROJECT_NAME}")
+  find_package(protoros2 REQUIRED)
+  proto2ros_vendor_package(${PROJECT_NAME}
+    PROTO_SSOT_ONLY
+    PROTOS "msg/ExampleMessage.proto"
+  )
+  set(CONVERSIONS_LIB ${PROJECT_NAME}_conversions)
+elseif(PROTO_SSOT)
+  message(STATUS "Using PROTO_SSOT (proto2ros coexisting with rosidl_typesupport_protobuf, ucB.1) for ${PROJECT_NAME}")
   find_package(protoros2 REQUIRED)
   proto2ros_vendor_package(${PROJECT_NAME}
     PROTOS "msg/ExampleMessage.proto"
   )
   set(CONVERSIONS_LIB ${PROJECT_NAME}_conversions)
 else()
-  message(STATUS "Using standard rosidl_generate_interfaces (msg/ExampleMessage.msg) for ${PROJECT_NAME}")
+  message(STATUS "Using standard rosidl_generate_interfaces (msg/ExampleMessage.msg, ucA) for ${PROJECT_NAME}")
   rosidl_generate_interfaces(${PROJECT_NAME}
     "msg/ExampleMessage.msg"
     DEPENDENCIES

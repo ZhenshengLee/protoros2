@@ -10,13 +10,40 @@ there is old and strong demand for protobuf serialization in ros2, see [the deve
 
 ### related work
 
-[the fork of rosidl_typesupport_protobuf for lyrical](https://github.com/PranavDhulipala/rosidl_typesupport_protobuf)
+[rosidl_typesupport_protobuf](https://github.com/eclipse-ecal/rosidl_typesupport_protobuf) (and many forks)
 
-[the fork of rosidl_typesupport_protobuf for ros2 bazel registry](https://github.com/asymingt/rosidl_typesupport_protobuf)
+[ros-central-registry: the protobuf cpp example of bazel ros2](https://github.com/intrinsic-opensource/ros-central-registry/blob/main/examples)
 
-[the protobuf cpp example of ros2 central registry](https://github.com/intrinsic-opensource/ros-central-registry/blob/main/examples)
+[proto2ros: proto-rosidl(msg) conversion](https://github.com/rai-opensource/proto2ros)
 
 ### what protoros2 do
+
+```
+===================== Third-Party Open-Source Foundations (Zero-Intrusive / Read-Only) =====================
++---------------------------------------------+       +----------------------------------------------------+
+|                  proto2ros                  |       |            rosidl_typesupport_protobuf             |
+|  (AST Parser: .proto -> synthetic .msg IDL) |       |  (TypeSupport & TypeAdapter C++ Handle Generator)  |
++----------------------+----------------------+       +-------------------------+--------------------------+
+                       │                                                        │
+                       └───────────────────────────┬────────────────────────────┘
+                                                   ▼
+========================= Proprietary Core Architecture (@packages/protoros2/) =========================
+                                     +---------------------------+
+                                     | protoros2 (Wrapper & Core)|  <--- Tri-State Orchestration Engine
+                                     |                           |       (Supports ucA, ucB.1, and ucB.2)
+                                     +-------------+-------------+
+                                                   │
+         ┌─────────────────────────────────────────┼─────────────────────────────────────────┐
+         ▼                                         ▼                                         ▼
++---------------------------------+  +---------------------------------+  +---------------------------------+
+|     RMW & Transport Layer       |  |  Zero-Copy IPC / Edge Drivers   |  |   MLOps & Rosbag2 Ecosystem     |
+|                                 |  |                                 |  |                                 |
+|  * rmw_ecal_proto_cpp           |  |  * rmw_zenoh_proto_cpp          |  |  *rosbag2_cpp_protobuf_converter|
+|    (Direct Proto Serdes Engine) |  |  (Control Plane Proto Transport)|  |    (-f protobuf Plugin Adapter) |
+|                                 |  |  * rmw_iceoryx_proto_cpp        |  |  * MCAP / Rosbag Readers        |
+|                                 |  |  (Data Plane Shared Memory IPC) |  |  (mcap_proto & rosbag2_reader)  |
++---------------------------------+  +---------------------------------+  +---------------------------------+
+```
 
 ## design
 
@@ -156,7 +183,7 @@ vcs import < ../rai.repos
 turn on the cmake option(default OFF)
 
 ```cmake
-option(PROTO_SSOT "Use Proto file as Single Source of Truth via proto2ros" ON)
+option(PROTO_SSOT "Use Proto file coexisting with rosidl_typesupport_protobuf (ucB.1)" OFF)
 ```
 
 the arch is as follows:
@@ -179,6 +206,65 @@ the arch is as follows:
                                                │
                                                ▼
                        [ rmw_ecal_proto_cpp: Direct Zero-Overhead Serdes ]
+```
+
+note: the proto definition must follow the rule: <ros2_package_name>.<folder_name>.pb
+
+note: use any of rmw above should be ok, take rmw_ecal_proto_cpp for example
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+# rclcpp
+ros2 run protoros2_example example_proto_publisher
+ros2 run protoros2_example example_proto_subscriber
+# rclpy
+ros2 topic list
+ros2 topic echo /proto_msg_topic
+# rosbag2
+ros2 bag record -o proto_msg_rmw_ecal_proto --topics /proto_msg_topic -f protobuf
+ros2 bag info ./proto_msg_rmw_ecal_proto/
+# bagreader
+ros2 run protoros2_example rosbag2_reader.py ./proto_msg_rmw_ecal_proto/
+ros2 run protoros2_example rosbags_reader.py ./proto_msg_rmw_ecal_proto/ # not supported currently
+# mlops
+mcap info ./proto_msg_rmw_ecal_proto/0_*.mcap
+ros2 run protoros2_example mcap_ros2_reader.py ./proto_msg_rmw_ecal_proto/0_*.mcap
+ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_ecal_proto/0_*.mcap
+```
+
+#### ucB.2: remove rosidl(msg) support and only use proto as the SSOT
+
+turn on the cmake option(default OFF)
+
+```cmake
+option(PROTO_SSOT_ONLY "Use Proto file as the ONLY SSOT directly, bypassing rosidl_adapter_proto (ucB.2)" OFF)
+```
+
+the arch is as follows:
+
+```
+                                 [ Single Source of Truth (.proto SSOT) ]
+                                                    │
+                 ┌──────────────────────────────────┴──────────────────────────────────┐
+                 ▼                                                                     ▼
+ [ Mirror IDL Branch: Standard ROS 2 ]                              [ Direct Proto Branch: Dual-Engine Serdes ]
+                 │                                                                     │
+                 ▼                                                                     ▼
+ proto2ros (Generate Mirror .msg)                                     Engine 1: Direct protoc --cpp_out
+                 │                                                   (Native C++ .pb.h/.pb.cc & Python _pb2.py)
+                 ▼                                                                     │
+    rosidl_generate_interfaces (Filtered!)                                             ▼
+  ❌ No .msg -> .proto synthetic conversion                           Engine 2: rosidl_typesupport_protobuf_cpp
+  (rosidl_adapter_proto & protobuf ts stripped)                        (Custom generator invoked on .proto SSOT)
+                 │                                                                     │
+                 ▼                                                                     ▼
+  Generates ROS 2 Standard C++ / Python Structs                 Generates TypeSupport Handle, TypeAdapter & Serdes
+  (Introspection, fastrtps, conversions bridge)                  (Direct zero-overhead binding to original .proto)
+                 │                                                                     │
+                 └──────────────────────────────────┬──────────────────────────────────┘
+                                                    ▼
+                                    [ Shared RMW & Application Layer ]
+                             rmw_ecal_proto_cpp / rclcpp / TypeAdapter Zero-Copy Bridge
 ```
 
 note: the proto definition must follow the rule: <ros2_package_name>.<folder_name>.pb

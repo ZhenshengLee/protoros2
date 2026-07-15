@@ -8,5 +8,5 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
-ament_export_dependencies(proto2ros)
+ament_export_dependencies(proto2ros rosidl_typesupport_protobuf_cpp)
 ament_package(CONFIG_EXTRAS "cmake/protoros2-extras.cmake")

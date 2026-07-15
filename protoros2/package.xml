@@ -13,6 +13,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>proto2ros</depend>
+  <depend>rosidl_typesupport_protobuf_cpp</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
