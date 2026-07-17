@@ -39,6 +39,7 @@ elseif(PROTO_SSOT)
   message(STATUS "Using PROTO_SSOT (proto2ros coexisting with rosidl_typesupport_protobuf, ucB.1) for ${PROJECT_NAME}")
   find_package(protoros2 REQUIRED)
   proto2ros_vendor_package(${PROJECT_NAME}
+    PROTO_SSOT
     PROTOS "msg/ExampleMessage.proto"
   )
   set(CONVERSIONS_LIB ${PROJECT_NAME}_conversions)

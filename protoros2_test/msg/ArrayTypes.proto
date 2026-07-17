@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package protoros2_test.msg.pb;
+
+message ArrayTypes {
+  repeated int32 int32_values = 1;
+  repeated double double_values = 2;
+  repeated string string_values = 3;
+  repeated bool bool_values = 4;
+}

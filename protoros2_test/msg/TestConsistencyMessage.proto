@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+// must follow: <ros2_package_name>.<folder_name>.pb
+package protoros2_test.msg.pb;
+
+import "msg/NestedConsistencyMessage.proto";
+
+message TestConsistencyMessage
+{
+  bool flag_bool = 1;
+  int32 val_int32 = 2;
+  int64 val_int64 = 3;
+  uint32 val_uint32 = 4;
+  uint64 val_uint64 = 5;
+  float val_float = 6;
+  double val_double = 7;
+  string val_string = 8;
+  repeated int32 list_int32 = 9;
+  repeated string list_string = 10;
+  NestedConsistencyMessage nested_msg = 11;
+  repeated NestedConsistencyMessage list_nested = 12;
+}

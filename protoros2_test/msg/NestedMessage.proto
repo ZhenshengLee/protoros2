@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package protoros2_test.msg.pb;
+
+import "msg/BasicTypes.proto";
+import "msg/ArrayTypes.proto";
+import "msg/SubMessage.proto";
+
+message NestedMessage {
+  string header_id = 1;
+  BasicTypes basic_info = 2;
+  ArrayTypes sensor_data = 3;
+  SubMessage main_sub = 4;
+  repeated SubMessage sub_list = 5;
+}

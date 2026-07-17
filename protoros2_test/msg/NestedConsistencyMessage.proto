@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+// must follow: <ros2_package_name>.<folder_name>.pb
+package protoros2_test.msg.pb;
+
+message NestedConsistencyMessage
+{
+  int32 id = 1;
+  string label = 2;
+  repeated double scores = 3;
+}

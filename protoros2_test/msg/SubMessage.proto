@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package protoros2_test.msg.pb;
+
+message SubMessage {
+  string name = 1;
+  int32 id = 2;
+  double score = 3;
+}
