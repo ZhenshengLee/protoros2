@@ -17,11 +17,15 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(rosidl_adapter_proto REQUIRED)
 find_package(rosidl_typesupport_protobuf_cpp REQUIRED)
 find_package(protoros2 REQUIRED)
+find_package(iceoryx_posh REQUIRED)
+find_package(iceoryx_hoofs REQUIRED)
+find_package(flatbuffers REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 
 option(PROTO_SSOT "Use Proto file coexisting with rosidl_typesupport_protobuf (ucB.1)" OFF)
 option(PROTO_SSOT_ONLY "Use Proto file as the ONLY SSOT directly, bypassing rosidl_adapter_proto (ucB.2)" OFF)
+option(BUILD_ENTERPRISE_TESTS "Build EnterpriseNode integration tests" ON)
 
 if(PROTO_SSOT AND PROTO_SSOT_ONLY)
   message(FATAL_ERROR "PROTO_SSOT (ucB.1) and PROTO_SSOT_ONLY (ucB.2) cannot both be ON simultaneously!")
@@ -60,6 +64,7 @@ if(BUILD_TESTING AND PROTO_SSOT_ONLY)
       target_link_libraries(${target_name}
         rclcpp::rclcpp
         std_msgs::std_msgs
+        protoros2::protoros2
         ${cpp_interfaces}
         ${protobuf_cpp_interfaces}
         ${PROJECT_NAME}__rosidl_generator_cpp
@@ -102,6 +107,9 @@ if(BUILD_TESTING AND PROTO_SSOT_ONLY)
     )
     target_link_libraries(test_type_mapping_consistency
       rclcpp::rclcpp
+      iceoryx_posh::iceoryx_posh
+      iceoryx_hoofs::iceoryx_hoofs
+      flatbuffers::flatbuffers
       ${cpp_interfaces}
       ${protobuf_cpp_interfaces}
       ${PROJECT_NAME}__rosidl_generator_cpp
@@ -114,6 +122,41 @@ if(BUILD_TESTING AND PROTO_SSOT_ONLY)
     if(TARGET ${PROJECT_NAME}_conversions)
       add_dependencies(test_type_mapping_consistency ${PROJECT_NAME}_conversions)
     endif()
+  endif()
+endif()
+
+if(BUILD_TESTING AND BUILD_ENTERPRISE_TESTS AND NOT PROTO_SSOT_ONLY)
+  find_package(ament_cmake_gtest REQUIRED)
+  # Generate BasicTypes.proto specifically for enterprise node testing when PROTO_SSOT_ONLY is OFF
+  proto2ros_vendor_package(${PROJECT_NAME}
+    PROTO_SSOT_ONLY
+    IMPORT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}"
+    PROTOS "msg/BasicTypes.proto"
+  )
+  rosidl_get_typesupport_target(cpp_interfaces ${PROJECT_NAME} "rosidl_typesupport_cpp")
+  rosidl_get_typesupport_target(protobuf_cpp_interfaces ${PROJECT_NAME} "rosidl_typesupport_protobuf_cpp")
+
+  macro(protoros2_test_add_gtest target_name source_file)
+    ament_add_gtest(${target_name} ${source_file})
+    if(TARGET ${target_name})
+      target_link_libraries(${target_name}
+        rclcpp::rclcpp
+        std_msgs::std_msgs
+        protoros2::protoros2
+        ${cpp_interfaces}
+        ${protobuf_cpp_interfaces}
+        ${PROJECT_NAME}__rosidl_generator_cpp
+        ${PROJECT_NAME}_conversions
+      )
+    endif()
+  endmacro()
+endif()
+
+if (BUILD_TESTING AND (PROTO_SSOT_ONLY OR BUILD_ENTERPRISE_TESTS))
+  protoros2_test_add_gtest(test_enterprise_node_integration
+      test/test_enterprise_node_integration.cpp)
+  if(TARGET test_enterprise_node_integration)
+    target_include_directories(test_enterprise_node_integration PRIVATE ${protoros2_INCLUDE_DIRS})
   endif()
 endif()
 

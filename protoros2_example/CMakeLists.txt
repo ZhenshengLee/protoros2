@@ -14,8 +14,11 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(rosidl_typesupport_protobuf_cpp REQUIRED)
+find_package(protoros2 REQUIRED)
+find_package(libjpeg-turbo REQUIRED)
 
 find_package(rclpy REQUIRED)
 find_package(rosbag2_py REQUIRED)
@@ -29,18 +32,16 @@ endif()
 
 if(PROTO_SSOT_ONLY)
   message(STATUS "Using PROTO_SSOT_ONLY (pure .proto SSOT via protoros2 wrapper, ucB.2) for ${PROJECT_NAME}")
-  find_package(protoros2 REQUIRED)
   proto2ros_vendor_package(${PROJECT_NAME}
     PROTO_SSOT_ONLY
-    PROTOS "msg/ExampleMessage.proto"
+    PROTOS "msg/ExampleMessage.proto" "msg/CompressedImage.proto"
   )
   set(CONVERSIONS_LIB ${PROJECT_NAME}_conversions)
 elseif(PROTO_SSOT)
   message(STATUS "Using PROTO_SSOT (proto2ros coexisting with rosidl_typesupport_protobuf, ucB.1) for ${PROJECT_NAME}")
-  find_package(protoros2 REQUIRED)
   proto2ros_vendor_package(${PROJECT_NAME}
     PROTO_SSOT
-    PROTOS "msg/ExampleMessage.proto"
+    PROTOS "msg/ExampleMessage.proto" "msg/CompressedImage.proto"
   )
   set(CONVERSIONS_LIB ${PROJECT_NAME}_conversions)
 else()
@@ -61,10 +62,44 @@ target_link_libraries(example_proto_publisher PRIVATE rclcpp::rclcpp std_msgs::s
 add_executable(example_proto_subscriber ./src/example_proto_subscriber.cpp)
 target_link_libraries(example_proto_subscriber PRIVATE rclcpp::rclcpp std_msgs::std_msgs ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
 
+add_executable(enterprise_proto_publisher ./src/enterprise_proto_publisher.cpp)
+target_include_directories(enterprise_proto_publisher PRIVATE ${protoros2_INCLUDE_DIRS})
+target_link_libraries(enterprise_proto_publisher PRIVATE rclcpp::rclcpp std_msgs::std_msgs protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
+
+add_executable(enterprise_proto_subscriber ./src/enterprise_proto_subscriber.cpp)
+target_include_directories(enterprise_proto_subscriber PRIVATE ${protoros2_INCLUDE_DIRS})
+target_link_libraries(enterprise_proto_subscriber PRIVATE rclcpp::rclcpp std_msgs::std_msgs protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
+
+add_executable(enterprise_flat_publisher ./src/enterprise_flat_publisher.cpp)
+target_include_directories(enterprise_flat_publisher PRIVATE ${protoros2_INCLUDE_DIRS})
+target_link_libraries(enterprise_flat_publisher PRIVATE rclcpp::rclcpp std_msgs::std_msgs protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
+
+add_executable(enterprise_flat_subscriber ./src/enterprise_flat_subscriber.cpp)
+target_include_directories(enterprise_flat_subscriber PRIVATE ${protoros2_INCLUDE_DIRS})
+target_link_libraries(enterprise_flat_subscriber PRIVATE rclcpp::rclcpp std_msgs::std_msgs protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
+
+add_executable(enterprise_image_talker ./src/enterprise_image_talker.cpp)
+target_include_directories(enterprise_image_talker PRIVATE ${protoros2_INCLUDE_DIRS})
+target_link_libraries(enterprise_image_talker PRIVATE rclcpp::rclcpp std_msgs::std_msgs ament_index_cpp::ament_index_cpp protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB} libjpeg-turbo::turbojpeg)
+
+add_executable(enterprise_image_listener ./src/enterprise_image_listener.cpp)
+target_include_directories(enterprise_image_listener PRIVATE ${protoros2_INCLUDE_DIRS})
+target_link_libraries(enterprise_image_listener PRIVATE rclcpp::rclcpp std_msgs::std_msgs ament_index_cpp::ament_index_cpp protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB} libjpeg-turbo::turbojpeg)
+
 install(TARGETS
   example_proto_publisher
   example_proto_subscriber
+  enterprise_proto_publisher
+  enterprise_proto_subscriber
+  enterprise_flat_publisher
+  enterprise_flat_subscriber
+  enterprise_image_talker
+  enterprise_image_listener
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY res
+  DESTINATION share/${PROJECT_NAME}
 )
 
 install(PROGRAMS

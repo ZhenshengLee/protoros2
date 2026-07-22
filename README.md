@@ -169,6 +169,24 @@ ros2 run protoros2_example mcap_ros2_reader.py ./proto_msg_rmw_ecal_both/0_*.mca
 ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_ecal_both/0_*.mcap
 ```
 
+##### ucA.3.2: run with rmw_iceoryx_proto_cpp
+
+need to import rmw_iceoryx
+
+```sh
+cd ./3rdparty
+vcs import < ../iceoryx.repos
+```
+
+```sh
+export RMW_IMPLEMENTATION=rmw_icecoryx_cpp
+# start iceoryx daemon first
+iox-roudi
+# 1. rclcpp with protobuf typesupport
+ros2 run protoros2_example example_proto_publisher
+ros2 run protoros2_example example_proto_subscriber
+```
+
 ### usecaseB: use proto as the SSOT
 
 need to import proto2ros (use the fork rather than the official repo)
@@ -289,6 +307,46 @@ ros2 run protoros2_example rosbags_reader.py ./proto_msg_rmw_ecal_proto/ # not s
 mcap info ./proto_msg_rmw_ecal_proto/0_*.mcap
 ros2 run protoros2_example mcap_ros2_reader.py ./proto_msg_rmw_ecal_proto/0_*.mcap
 ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_ecal_proto/0_*.mcap
+```
+
+### usecaseC: use enterprise node to accelerate the communication
+
+#### ucC.1: use proto_publisher and proto_subscriber
+
+can avoid 2 typeadaption conversion
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+ros2 run protoros2_example enterprise_proto_publisher
+ros2 run protoros2_example enterprise_proto_subscriber
+```
+
+#### ucC.2: use flat_publisher and flat_subscriber
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+iox-roudi
+ros2 run protoros2_example enterprise_flat_publisher
+ros2 run protoros2_example enterprise_flat_subscriber
+```
+
+#### ucC.3 image transport benchmark
+
+```sh
+# start roudi first
+iox-roudi &
+```
+
+```sh
+ros2 run protoros2_example enterprise_image_listener --ros-args -p decode_and_verify:=false
+```
+
+```sh
+# 1080p (3.3 MB JPEG)
+ros2 run protoros2_example enterprise_image_talker --ros-args -p image_path:=1920_1080.jpg -p frequency:=10.0
+
+# 4k(5 MB JPEG)
+ros2 run protoros2_example enterprise_image_talker --ros-args -p image_path:=6000_4000.jpg -p frequency:=5.0
 ```
 
 ## acknowledgement
