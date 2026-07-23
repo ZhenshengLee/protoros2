@@ -23,7 +23,7 @@ RUN set -x; \
     && apt install -y systemd strace ltrace kmod \
     && apt install -y clang-tidy libprotobuf-dev protobuf-compiler python3-jinja2 python3-inflection python3-multipledispatch python3-networkx python3-scipy \
     && apt install -y ros-lyrical-demo-nodes-cpp ros-lyrical-osrf-testing-tools-cpp ros-lyrical-test-msgs \
-    && apt install -y iceoryx iceoryx-doc libiceoryx-*-dev libflatbuffers-dev flatbuffers-compiler libturbojpeg0-dev \
+    && apt install -y iceoryx iceoryx-doc libiceoryx-*-dev libflatbuffers-dev flatbuffers-compiler libturbojpeg0-dev libjpeg-turbo8-dev \
     && pip3 config set global.trusted-host https://pypi.tuna.tsinghua.edu.cn \
     && pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
     && python3 -m pip install rosbags mcap protobuf==5.29.6 \

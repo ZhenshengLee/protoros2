@@ -45,7 +45,8 @@ namespace protoros2
  *    - Otherwise, falls back to standard rclcpp::TypeAdapter / CDR publishing and subscribing.
  * 2. FlatChannel (create_flat_publisher / create_flat_subscription):
  *    High-performance bypass communication channel (e.g., based on Iceoryx / shared memory IPC)
- *    designed for ultra-low latency data transmission.
+ *    designed for ultra-low latency data transmission. Supports both high-speed callback push
+ *    and WaitSet / Polling / CallbackGroup / EventsExecutor paradigms.
  */
 class EnterpriseNode : public rclcpp::Node
 {
@@ -183,7 +184,8 @@ public:
   }
 
   /**
-   * @brief Create a FlatSubscription for high-performance bypass communication (e.g., Iceoryx).
+   * @brief Create a FlatSubscription with callback for high-performance bypass communication.
+   * Supports CallbackGroup registration and both CallbackPush and WaitSetPull modes.
    *
    * @tparam ProtoMsgT The C++ Protobuf message class.
    * @tparam RosMsgT The ROS 2 message struct class (defaults to ProtoMsgT).
@@ -191,16 +193,21 @@ public:
    * @param topic_name The topic name to subscribe to.
    * @param qos Quality of Service settings.
    * @param callback The callback invoked when a message is received.
-   * @param options Subscription options.
+   * @param options Subscription options (including callback_group).
+   * @param mode Optional mode selection (CallbackPush vs WaitSetPull).
    * @return Shared pointer to the created FlatSubscription.
    */
   template <typename ProtoMsgT, typename RosMsgT = ProtoMsgT, typename CallbackT>
   std::shared_ptr<FlatSubscription<ProtoMsgT, RosMsgT>> create_flat_subscription(
     const std::string & topic_name, const rclcpp::QoS & qos, CallbackT && callback,
-    const rclcpp::SubscriptionOptions & options = rclcpp::SubscriptionOptions())
+    const rclcpp::SubscriptionOptions & options = rclcpp::SubscriptionOptions(),
+    FlatSubscriptionMode mode = FlatSubscriptionMode::CallbackPush)
   {
     (void)qos;
-    (void)options;
+    if (options.callback_group != nullptr) {
+      mode = FlatSubscriptionMode::WaitSetPull;
+    }
+
     auto cb_wrapper = [user_callback = std::forward<CallbackT>(callback)](const ProtoMsgT & proto_msg) -> void {
       if constexpr (std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &>) {
         rclcpp::MessageInfo dummy_info;
@@ -215,7 +222,36 @@ public:
       }
     };
 
-    return std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(topic_name, cb_wrapper);
+    auto sub = std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(topic_name, cb_wrapper, mode);
+    if (options.callback_group != nullptr || mode == FlatSubscriptionMode::WaitSetPull) {
+      this->get_node_waitables_interface()->add_waitable(sub->get_waitable(), options.callback_group);
+    }
+    return sub;
+  }
+
+  /**
+   * @brief Create a FlatSubscription without callback for pure WaitSet or Polling pattern.
+   *
+   * @tparam ProtoMsgT The C++ Protobuf message class.
+   * @tparam RosMsgT The ROS 2 message struct class (defaults to ProtoMsgT).
+   * @param topic_name The topic name to subscribe to.
+   * @param qos Quality of Service settings.
+   * @param mode Subscription mode (e.g., FlatSubscriptionMode::WaitSetPull).
+   * @param options Subscription options.
+   * @return Shared pointer to the created FlatSubscription.
+   */
+  template <typename ProtoMsgT, typename RosMsgT = ProtoMsgT>
+  std::shared_ptr<FlatSubscription<ProtoMsgT, RosMsgT>> create_flat_subscription(
+    const std::string & topic_name, const rclcpp::QoS & qos, FlatSubscriptionMode mode,
+    const rclcpp::SubscriptionOptions & options = rclcpp::SubscriptionOptions())
+  {
+    (void)qos;
+    std::function<void(const ProtoMsgT &)> empty_cb = nullptr;
+    auto sub = std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(topic_name, empty_cb, mode);
+    if (options.callback_group != nullptr) {
+      this->get_node_waitables_interface()->add_waitable(sub->get_waitable(), options.callback_group);
+    }
+    return sub;
   }
 };
 

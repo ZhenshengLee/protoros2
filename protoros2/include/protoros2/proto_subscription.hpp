@@ -17,9 +17,12 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp/serialized_message.hpp"
+#include "rclcpp/type_adapter.hpp"
 
 namespace protoros2
 {
@@ -40,6 +43,61 @@ public:
   ProtoSubscription(rclcpp::SubscriptionBase::SharedPtr sub_base, bool is_protobuf_native)
   : sub_base_(std::move(sub_base)), is_protobuf_native_(is_protobuf_native)
   {
+  }
+
+  /**
+   * @brief Take a message directly from the subscription queue without callback dispatch.
+   * Useful when using rclcpp::WaitSet or Polling Subscriber patterns.
+   *
+   * @param out_msg Reference to the Protobuf message to populate.
+   * @param message_info Reference to the MessageInfo structure to populate.
+   * @return true if a message was successfully taken and parsed, false otherwise.
+   */
+  bool take(ProtoMsgT & out_msg, rclcpp::MessageInfo & message_info)
+  {
+    if (!sub_base_) {
+      return false;
+    }
+    if (is_protobuf_native_) {
+      rclcpp::SerializedMessage ser_msg;
+      if (sub_base_->take_serialized(ser_msg, message_info)) {
+        const auto & rcl_msg = ser_msg.get_rcl_serialized_message();
+        out_msg.Clear();
+        return out_msg.ParseFromArray(rcl_msg.buffer, static_cast<int>(rcl_msg.buffer_length));
+      }
+    } else {
+      if constexpr (
+        std::is_same_v<ProtoMsgT, RosMsgT> || rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::is_specialized::value) {
+        auto * proto_sub = dynamic_cast<rclcpp::Subscription<ProtoMsgT> *>(sub_base_.get());
+        if (proto_sub) {
+          ProtoMsgT taken_msg;
+          if (proto_sub->take(taken_msg, message_info)) {
+            out_msg = std::move(taken_msg);
+            return true;
+          }
+        }
+      } else {
+        auto * ros_sub = dynamic_cast<rclcpp::Subscription<RosMsgT> *>(sub_base_.get());
+        if (ros_sub) {
+          RosMsgT taken_ros;
+          if (ros_sub->take(taken_ros, message_info)) {
+            out_msg.Clear();
+            rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::convert_to_custom_type(taken_ros, out_msg);
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * @brief Overload of take() without requiring MessageInfo output.
+   */
+  bool take(ProtoMsgT & out_msg)
+  {
+    rclcpp::MessageInfo dummy_info;
+    return take(out_msg, dummy_info);
   }
 
   /// Get the underlying SubscriptionBase pointer.

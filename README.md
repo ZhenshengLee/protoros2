@@ -28,21 +28,25 @@ there is old and strong demand for protobuf serialization in ros2, see [the deve
                        └───────────────────────────┬────────────────────────────┘
                                                    ▼
 ========================= Proprietary Core Architecture (@packages/protoros2/) =========================
-                                     +---------------------------+
-                                     | protoros2 (Wrapper & Core)|  <--- Tri-State Orchestration Engine
-                                     |                           |       (Supports ucA, ucB.1, and ucB.2)
-                                     +-------------+-------------+
+                               +---------------------------------------+
+                               |     protoros2 (Wrapper & Core)        |
+                               |                                       |
+                               |  * Tri-State Orchestration Engine     |
+                               |    (Supports ucA, ucB.1, and ucB.2)   |
+                               |  * enterprise_node                    |
+                               |    (Flat/Proto Channel & Executor API)|
+                               +-------------------+-------------------+
                                                    │
-         ┌─────────────────────────────────────────┼─────────────────────────────────────────┐
-         ▼                                         ▼                                         ▼
-+---------------------------------+  +---------------------------------+  +---------------------------------+
-|     RMW & Transport Layer       |  |  Zero-Copy IPC / Edge Drivers   |  |   MLOps & Rosbag2 Ecosystem     |
-|                                 |  |                                 |  |                                 |
-|  * rmw_ecal_proto_cpp           |  |  * rmw_zenoh_proto_cpp          |  |  *rosbag2_cpp_protobuf_converter|
-|    (Direct Proto Serdes Engine) |  |  (Control Plane Proto Transport)|  |    (-f protobuf Plugin Adapter) |
-|                                 |  |  * rmw_iceoryx_proto_cpp        |  |  * MCAP / Rosbag Readers        |
-|                                 |  |  (Data Plane Shared Memory IPC) |  |  (mcap_proto & rosbag2_reader)  |
-+---------------------------------+  +---------------------------------+  +---------------------------------+
+                   ┌───────────────────────────────┴───────────────────────────────┐
+                   ▼                                                               ▼
++--------------------------------------+                          +--------------------------------------+
+|       RMW & Transport Layer          |                          |      MLOps & Rosbag2 Ecosystem       |
+|                                      |                          |                                      |
+|  * rmw_ecal_proto_cpp                |                          |  * rosbag2_cpp_protobuf_converter    |
+|    (Direct Proto Serdes Engine)      |                          |    (-f protobuf Plugin Adapter)      |
+|                                      |                          |  * MCAP / Rosbag Readers             |
+|                                      |                          |    (mcap_proto & rosbag2_reader)     |
++--------------------------------------+                          +--------------------------------------+
 ```
 
 ## design
@@ -347,6 +351,48 @@ ros2 run protoros2_example enterprise_image_talker --ros-args -p image_path:=192
 
 # 4k(5 MB JPEG)
 ros2 run protoros2_example enterprise_image_talker --ros-args -p image_path:=6000_4000.jpg -p frequency:=5.0
+```
+
+### usecaseD: replace default rclcpp::node with enterprise node
+
+enterprise_proto natively supports ROS 2 standard paradigms (WaitSet, Component, CallbackGroup) through its rclcpp::SubscriptionBase proxy. enterprise_flat provides custom waitables to adapt Iceoryx to the ROS 2 executor ecosystem.
+
+#### ucD.1: callback group subscriber
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+# start iceoryx daemon first
+iox-roudi &
+
+ros2 run protoros2_example enterprise_flat_publisher
+ros2 run protoros2_example enterprise_flat_callback_group_subscriber
+```
+
+#### ucD.2: waitset subscriber
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+# start iceoryx daemon first
+iox-roudi &
+
+ros2 run protoros2_example enterprise_flat_publisher
+ros2 run protoros2_example enterprise_flat_waitset_subscriber
+```
+
+#### ucD.3: polling subscriber
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+# start iceoryx daemon first
+iox-roudi &
+
+# 1. Flat Channel Polling Subscriber (Iceoryx Waitable)
+ros2 run protoros2_example enterprise_flat_publisher
+ros2 run protoros2_example enterprise_flat_polling_subscriber
+
+# 2. Proto Channel Polling Subscriber (Mutually Exclusive CallbackGroup Pattern)
+ros2 run protoros2_example enterprise_proto_publisher
+ros2 run protoros2_example enterprise_proto_polling_subscriber
 ```
 
 ## acknowledgement

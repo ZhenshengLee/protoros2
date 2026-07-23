@@ -153,11 +153,20 @@ if(BUILD_TESTING AND BUILD_ENTERPRISE_TESTS AND NOT PROTO_SSOT_ONLY)
 endif()
 
 if (BUILD_TESTING AND (PROTO_SSOT_ONLY OR BUILD_ENTERPRISE_TESTS))
-  protoros2_test_add_gtest(test_enterprise_node_integration
-      test/test_enterprise_node_integration.cpp)
-  if(TARGET test_enterprise_node_integration)
-    target_include_directories(test_enterprise_node_integration PRIVATE ${protoros2_INCLUDE_DIRS})
-  endif()
+  # TODO(zs): temporarily disable integration tests that depend on RouDi
+  # protoros2_test_add_gtest(test_enterprise_node_integration
+  #     test/test_enterprise_node_integration.cpp)
+  # if(TARGET test_enterprise_node_integration)
+  #   target_include_directories(test_enterprise_node_integration PRIVATE ${protoros2_INCLUDE_DIRS})
+  # endif()
+
+  # protoros2_test_add_gtest(test_enterprise_node_paradigms
+  #     test/test_enterprise_node_paradigms.cpp)
+  # if(TARGET test_enterprise_node_paradigms)
+  #   target_include_directories(test_enterprise_node_paradigms PRIVATE ${protoros2_INCLUDE_DIRS})
+  # endif()
+
+  protoros2_test_add_gtest(test_waitable test/test_waitable.cpp)
 endif()
 
 ament_package()

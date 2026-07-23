@@ -22,6 +22,7 @@
 #include <string>
 
 #include "google/protobuf/message.h"
+#include "rclcpp/guard_condition.hpp"
 
 namespace iox
 {
@@ -34,6 +35,13 @@ class UntypedSubscriber;
 
 namespace protoros2
 {
+
+enum class FlatSubscriptionMode
+{
+  CallbackPush = 0,
+  WaitSetPull = 1
+};
+
 namespace details
 {
 
@@ -48,21 +56,24 @@ public:
   virtual iox::popo::UntypedPublisher * get_iox_publisher() const = 0;
 };
 
+using FlatPayloadCallback = std::function<void(const void * payload, size_t size, bool is_flatbuffer_vec)>;
+
 class FlatSubscriptionBackend
 {
 public:
   virtual ~FlatSubscriptionBackend() = default;
   virtual void subscribe() = 0;
   virtual void unsubscribe() = 0;
+  virtual bool has_data() const = 0;
+  virtual bool take_payload(FlatPayloadCallback processor) = 0;
+  virtual rclcpp::GuardCondition::SharedPtr get_guard_condition() const = 0;
   virtual iox::popo::UntypedSubscriber * get_iox_subscriber() const = 0;
 };
-
-using FlatPayloadCallback = std::function<void(const void * payload, size_t size, bool is_flatbuffer_vec)>;
 
 std::unique_ptr<FlatPublisherBackend> create_flat_publisher_backend(const std::string & topic_name);
 
 std::unique_ptr<FlatSubscriptionBackend> create_flat_subscription_backend(
-  const std::string & topic_name, FlatPayloadCallback callback);
+  const std::string & topic_name, FlatSubscriptionMode mode, FlatPayloadCallback callback);
 
 }  // namespace details
 }  // namespace protoros2

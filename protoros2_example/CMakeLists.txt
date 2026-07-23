@@ -15,10 +15,19 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(ament_index_cpp REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(rosidl_typesupport_protobuf_cpp REQUIRED)
 find_package(protoros2 REQUIRED)
-find_package(libjpeg-turbo REQUIRED)
+find_library(TURBOJPEG_LIB NAMES turbojpeg REQUIRED)
+find_path(TURBOJPEG_INCLUDE_DIR NAMES turbojpeg.h REQUIRED)
+if(NOT TARGET libjpeg-turbo::turbojpeg)
+  add_library(libjpeg-turbo::turbojpeg UNKNOWN IMPORTED)
+  set_target_properties(libjpeg-turbo::turbojpeg PROPERTIES
+    IMPORTED_LOCATION "${TURBOJPEG_LIB}"
+    INTERFACE_INCLUDE_DIRECTORIES "${TURBOJPEG_INCLUDE_DIR}"
+  )
+endif()
 
 find_package(rclpy REQUIRED)
 find_package(rosbag2_py REQUIRED)
@@ -48,7 +57,8 @@ else()
   message(STATUS "Using standard rosidl_generate_interfaces (msg/ExampleMessage.msg, ucA) for ${PROJECT_NAME}")
   rosidl_generate_interfaces(${PROJECT_NAME}
     "msg/ExampleMessage.msg"
-    DEPENDENCIES
+    "msg/CompressedImage.msg"
+    DEPENDENCIES builtin_interfaces
   )
   set(CONVERSIONS_LIB "")
 endif()
@@ -78,6 +88,22 @@ add_executable(enterprise_flat_subscriber ./src/enterprise_flat_subscriber.cpp)
 target_include_directories(enterprise_flat_subscriber PRIVATE ${protoros2_INCLUDE_DIRS})
 target_link_libraries(enterprise_flat_subscriber PRIVATE rclcpp::rclcpp std_msgs::std_msgs protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
 
+add_executable(enterprise_flat_waitset_subscriber ./src/enterprise_flat_waitset_subscriber.cpp)
+target_include_directories(enterprise_flat_waitset_subscriber PRIVATE ${protoros2_INCLUDE_DIRS})
+target_link_libraries(enterprise_flat_waitset_subscriber PRIVATE rclcpp::rclcpp std_msgs::std_msgs protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
+
+add_executable(enterprise_flat_polling_subscriber ./src/enterprise_flat_polling_subscriber.cpp)
+target_include_directories(enterprise_flat_polling_subscriber PRIVATE ${protoros2_INCLUDE_DIRS})
+target_link_libraries(enterprise_flat_polling_subscriber PRIVATE rclcpp::rclcpp std_msgs::std_msgs protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
+
+add_executable(enterprise_proto_polling_subscriber ./src/enterprise_proto_polling_subscriber.cpp)
+target_include_directories(enterprise_proto_polling_subscriber PRIVATE ${protoros2_INCLUDE_DIRS})
+target_link_libraries(enterprise_proto_polling_subscriber PRIVATE rclcpp::rclcpp std_msgs::std_msgs protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
+
+add_executable(enterprise_flat_callback_group_subscriber ./src/enterprise_flat_callback_group_subscriber.cpp)
+target_include_directories(enterprise_flat_callback_group_subscriber PRIVATE ${protoros2_INCLUDE_DIRS})
+target_link_libraries(enterprise_flat_callback_group_subscriber PRIVATE rclcpp::rclcpp std_msgs::std_msgs protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
+
 add_executable(enterprise_image_talker ./src/enterprise_image_talker.cpp)
 target_include_directories(enterprise_image_talker PRIVATE ${protoros2_INCLUDE_DIRS})
 target_link_libraries(enterprise_image_talker PRIVATE rclcpp::rclcpp std_msgs::std_msgs ament_index_cpp::ament_index_cpp protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB} libjpeg-turbo::turbojpeg)
@@ -93,6 +119,10 @@ install(TARGETS
   enterprise_proto_subscriber
   enterprise_flat_publisher
   enterprise_flat_subscriber
+  enterprise_flat_waitset_subscriber
+  enterprise_flat_polling_subscriber
+  enterprise_proto_polling_subscriber
+  enterprise_flat_callback_group_subscriber
   enterprise_image_talker
   enterprise_image_listener
   DESTINATION lib/${PROJECT_NAME}

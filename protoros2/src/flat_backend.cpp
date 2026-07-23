@@ -24,6 +24,7 @@
 #include "iceoryx_posh/popo/untyped_publisher.hpp"
 #include "iceoryx_posh/popo/untyped_subscriber.hpp"
 #include "iceoryx_posh/runtime/posh_runtime.hpp"
+#include "rclcpp/guard_condition.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 namespace protoros2
@@ -123,14 +124,16 @@ private:
 class FlatSubscriptionBackendImpl : public FlatSubscriptionBackend
 {
 public:
-  FlatSubscriptionBackendImpl(const std::string & topic_name, FlatPayloadCallback callback)
-  : topic_name_(topic_name), callback_(std::move(callback))
+  FlatSubscriptionBackendImpl(const std::string & topic_name, FlatSubscriptionMode mode, FlatPayloadCallback callback)
+  : topic_name_(topic_name), mode_(mode), callback_(std::move(callback))
   {
     std::string clean_topic = topic_name_.empty() ? "" : (topic_name_[0] == '/' ? topic_name_.substr(1) : topic_name_);
     iox_sub_ = std::make_unique<iox::popo::UntypedSubscriber>(iox::capro::ServiceDescription(
       iox::capro::IdString_t(iox::cxx::TruncateToCapacity, "protoros2"),
       iox::capro::IdString_t(iox::cxx::TruncateToCapacity, clean_topic),
       iox::capro::IdString_t(iox::cxx::TruncateToCapacity, "flat")));
+
+    guard_condition_ = std::make_shared<rclcpp::GuardCondition>();
   }
 
   ~FlatSubscriptionBackendImpl() override { unsubscribe(); }
@@ -157,6 +160,37 @@ public:
     }
   }
 
+  bool has_data() const override { return iox_sub_ && iox_sub_->hasData(); }
+
+  bool take_payload(FlatPayloadCallback processor) override
+  {
+    if (!iox_sub_ || !iox_sub_->hasData()) {
+      return false;
+    }
+
+    auto take_result = iox_sub_->take();
+    if (take_result.has_error()) {
+      return false;
+    }
+
+    const void * payload = take_result.value();
+    auto chunk_header = iox::mepoo::ChunkHeader::fromUserPayload(payload);
+    uint32_t payload_size = chunk_header ? chunk_header->userPayloadSize() : 0;
+
+    if (payload && payload_size > 0 && processor) {
+      auto vec = flatbuffers::GetRoot<flatbuffers::Vector<uint8_t>>(payload);
+      if (vec && vec->data() && vec->size() > 0 && vec->size() <= payload_size) {
+        processor(vec->data(), vec->size(), true);
+      } else {
+        processor(payload, payload_size, false);
+      }
+    }
+    iox_sub_->release(payload);
+    return true;
+  }
+
+  rclcpp::GuardCondition::SharedPtr get_guard_condition() const override { return guard_condition_; }
+
   iox::popo::UntypedSubscriber * get_iox_subscriber() const override { return iox_sub_.get(); }
 
 private:
@@ -166,30 +200,39 @@ private:
     if (!subscriber || !self) {
       return;
     }
-    while (subscriber->hasData()) {
-      auto take_result = subscriber->take();
-      if (!take_result.has_error()) {
-        const void * payload = take_result.value();
-        auto chunk_header = iox::mepoo::ChunkHeader::fromUserPayload(payload);
-        uint32_t payload_size = chunk_header ? chunk_header->userPayloadSize() : 0;
 
-        if (payload && payload_size > 0 && self->callback_) {
-          auto vec = flatbuffers::GetRoot<flatbuffers::Vector<uint8_t>>(payload);
-          if (vec && vec->data() && vec->size() > 0 && vec->size() <= payload_size) {
-            self->callback_(vec->data(), vec->size(), true);
-          } else {
-            self->callback_(payload, payload_size, false);
+    if (self->guard_condition_) {
+      self->guard_condition_->trigger();
+    }
+
+    if (self->mode_ == FlatSubscriptionMode::CallbackPush && self->callback_) {
+      while (subscriber->hasData()) {
+        auto take_result = subscriber->take();
+        if (!take_result.has_error()) {
+          const void * payload = take_result.value();
+          auto chunk_header = iox::mepoo::ChunkHeader::fromUserPayload(payload);
+          uint32_t payload_size = chunk_header ? chunk_header->userPayloadSize() : 0;
+
+          if (payload && payload_size > 0 && self->callback_) {
+            auto vec = flatbuffers::GetRoot<flatbuffers::Vector<uint8_t>>(payload);
+            if (vec && vec->data() && vec->size() > 0 && vec->size() <= payload_size) {
+              self->callback_(vec->data(), vec->size(), true);
+            } else {
+              self->callback_(payload, payload_size, false);
+            }
           }
+          subscriber->release(payload);
         }
-        subscriber->release(payload);
       }
     }
   }
 
   std::string topic_name_;
+  FlatSubscriptionMode mode_;
   FlatPayloadCallback callback_;
   std::unique_ptr<iox::popo::UntypedSubscriber> iox_sub_;
   std::unique_ptr<iox::popo::Listener> iox_listener_;
+  rclcpp::GuardCondition::SharedPtr guard_condition_;
 };
 
 std::unique_ptr<FlatPublisherBackend> create_flat_publisher_backend(const std::string & topic_name)
@@ -198,9 +241,9 @@ std::unique_ptr<FlatPublisherBackend> create_flat_publisher_backend(const std::s
 }
 
 std::unique_ptr<FlatSubscriptionBackend> create_flat_subscription_backend(
-  const std::string & topic_name, FlatPayloadCallback callback)
+  const std::string & topic_name, FlatSubscriptionMode mode, FlatPayloadCallback callback)
 {
-  return std::make_unique<FlatSubscriptionBackendImpl>(topic_name, std::move(callback));
+  return std::make_unique<FlatSubscriptionBackendImpl>(topic_name, mode, std::move(callback));
 }
 
 }  // namespace details
