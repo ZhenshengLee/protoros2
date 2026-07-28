@@ -112,6 +112,10 @@ add_executable(enterprise_image_listener ./src/enterprise_image_listener.cpp)
 target_include_directories(enterprise_image_listener PRIVATE ${protoros2_INCLUDE_DIRS})
 target_link_libraries(enterprise_image_listener PRIVATE rclcpp::rclcpp std_msgs::std_msgs ament_index_cpp::ament_index_cpp protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB} libjpeg-turbo::turbojpeg)
 
+add_executable(enterprise_proto_intra_demo ./src/enterprise_proto_intra_demo.cpp)
+target_include_directories(enterprise_proto_intra_demo PRIVATE ${protoros2_INCLUDE_DIRS})
+target_link_libraries(enterprise_proto_intra_demo PRIVATE rclcpp::rclcpp std_msgs::std_msgs protoros2::protoros2 ${cpp_typesupport_target} ${protobuf_cpp_typesupport_target} ${PROJECT_NAME}__rosidl_generator_cpp ${CONVERSIONS_LIB})
+
 install(TARGETS
   example_proto_publisher
   example_proto_subscriber
@@ -125,6 +129,7 @@ install(TARGETS
   enterprise_flat_callback_group_subscriber
   enterprise_image_talker
   enterprise_image_listener
+  enterprise_proto_intra_demo
   DESTINATION lib/${PROJECT_NAME}
 )
 

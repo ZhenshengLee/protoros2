@@ -395,6 +395,16 @@ ros2 run protoros2_example enterprise_proto_publisher
 ros2 run protoros2_example enterprise_proto_polling_subscriber
 ```
 
+#### ucD.4: intra-process-comm zerocopy
+
+enterprise_proto natively supports rclcpp's TypeAdapter intra-process zero-copy communication.
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+
+ros2 run protoros2_example enterprise_proto_intra_demo
+```
+
 ## acknowledgement
 
 [agy-cli](https://antigravity.google/docs/cli/overview)

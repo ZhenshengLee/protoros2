@@ -188,6 +188,9 @@ public:
               "Failed to parse Protobuf message from ZeroCopyStream (payload size: %zu)", size);
           }
         } else {
+          static_assert(std::is_trivially_copyable_v<ProtoMsgT>,
+            "FlatSubscription only supports Protobuf messages or trivially copyable POD types! "
+            "TypeAdapter mapping for complex types is not supported over Flat channel.");
           if (sizeof(ProtoMsgT) <= size && !is_flatbuffer_vec) {
             ProtoMsgT msg;
             std::memcpy(&msg, payload, sizeof(ProtoMsgT));
@@ -243,6 +246,10 @@ public:
         out_msg.Clear();
         taken = out_msg.ParseFromZeroCopyStream(&raw_input);
       } else {
+        static_assert(
+          std::is_trivially_copyable_v<ProtoMsgT>,
+          "FlatSubscription only supports Protobuf messages or trivially copyable POD types! TypeAdapter mapping for "
+          "complex types is not supported over Flat channel.");
         if (sizeof(ProtoMsgT) <= size && !is_flatbuffer_vec) {
           std::memcpy(&out_msg, payload, sizeof(ProtoMsgT));
           taken = true;

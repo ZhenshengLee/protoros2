@@ -51,7 +51,37 @@ namespace protoros2
 class EnterpriseNode : public rclcpp::Node
 {
 public:
-  using rclcpp::Node::Node;
+  static rclcpp::NodeOptions apply_enterprise_defaults(rclcpp::NodeOptions options)
+  {
+    return options.enable_rosout(false)
+      .start_parameter_services(false)
+      .start_parameter_event_publisher(false)
+      .allow_undeclared_parameters(false)
+      .automatically_declare_parameters_from_overrides(false);
+  }
+
+  explicit EnterpriseNode(const std::string & node_name, const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
+  : rclcpp::Node(node_name, apply_enterprise_defaults(options))
+  {
+  }
+
+  explicit EnterpriseNode(
+    const std::string & node_name, const std::string & namespace_,
+    const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
+  : rclcpp::Node(node_name, namespace_, apply_enterprise_defaults(options))
+  {
+  }
+
+  // ==============================================================================
+  // ENTERPRISE API GUARD
+  // ==============================================================================
+  // 生产环境严禁使用原生 publisher，请使用 create_proto_publisher / create_flat_publisher
+  template <typename... Args>
+  void create_publisher(Args &&...) = delete;
+
+  // 生产环境严禁使用原生 subscription，请使用 create_proto_subscription / create_flat_subscription
+  template <typename... Args>
+  void create_subscription(Args &&...) = delete;
 
   /**
    * @brief Create a ProtoPublisher with smart routing capabilities.
@@ -68,7 +98,10 @@ public:
     const std::string & topic_name, const rclcpp::QoS & qos,
     const rclcpp::PublisherOptions & options = rclcpp::PublisherOptions())
   {
-    auto raw_pub = this->create_publisher<RosMsgT>(topic_name, qos, options);
+    rclcpp::PublisherOptions enterprise_options = options;
+    enterprise_options.qos_overriding_options = rclcpp::QosOverridingOptions{};
+
+    auto raw_pub = this->rclcpp::Node::create_publisher<ProtoMsgT>(topic_name, qos, enterprise_options);
     return std::make_shared<ProtoPublisher<ProtoMsgT, RosMsgT>>(raw_pub);
   }
 
@@ -89,10 +122,25 @@ public:
     const std::string & topic_name, const rclcpp::QoS & qos, CallbackT && callback,
     const rclcpp::SubscriptionOptions & options = rclcpp::SubscriptionOptions())
   {
+    rclcpp::SubscriptionOptions enterprise_options = options;
+    enterprise_options.qos_overriding_options = rclcpp::QosOverridingOptions{};
+    enterprise_options.topic_stats_options.state = rclcpp::TopicStatisticsState::Disable;
+
     const char * rmw_format = rmw_get_serialization_format();
     bool is_protobuf_native = (rmw_format != nullptr && std::string(rmw_format) == "protobuf");
 
-    if (is_protobuf_native) {
+    bool use_intra_process = false;
+    if (enterprise_options.use_intra_process_comm == rclcpp::IntraProcessSetting::Enable) {
+      use_intra_process = true;
+    } else if (enterprise_options.use_intra_process_comm == rclcpp::IntraProcessSetting::NodeDefault) {
+      use_intra_process = this->get_node_options().use_intra_process_comms();
+    }
+
+    constexpr bool can_use_type_adapter =
+      std::is_same_v<ProtoMsgT, RosMsgT> || rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::is_specialized::value;
+    bool force_track_b = use_intra_process && can_use_type_adapter;
+
+    if (is_protobuf_native && !force_track_b) {
       // Track A: Protobuf Fast-Path (subscribe to SerializedMessage and parse directly)
       auto serialized_callback = [user_callback = std::forward<CallbackT>(callback)](
                                    std::shared_ptr<rclcpp::SerializedMessage> serialized_msg,
@@ -112,12 +160,19 @@ public:
             user_callback(std::make_shared<ProtoMsgT>(std::move(proto_msg)), message_info);
           } else if constexpr (std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>>) {
             user_callback(std::make_shared<ProtoMsgT>(std::move(proto_msg)));
+          } else if constexpr (std::is_invocable_v<
+                                 CallbackT, std::unique_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>) {
+            user_callback(std::make_unique<ProtoMsgT>(std::move(proto_msg)), message_info);
+          } else if constexpr (std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>>) {
+            user_callback(std::make_unique<ProtoMsgT>(std::move(proto_msg)));
           } else {
             static_assert(
               std::is_invocable_v<CallbackT, const ProtoMsgT &> ||
                 std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &> ||
                 std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>> ||
-                std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>,
+                std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>, const rclcpp::MessageInfo &> ||
+                std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>> ||
+                std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>,
               "Unsupported callback signature for ProtoSubscription");
           }
         } else {
@@ -128,13 +183,15 @@ public:
         }
       };
 
-      auto sub = this->create_subscription<RosMsgT>(topic_name, qos, serialized_callback, options);
+      auto sub =
+        this->rclcpp::Node::create_subscription<RosMsgT>(topic_name, qos, serialized_callback, enterprise_options);
       return std::make_shared<ProtoSubscription<ProtoMsgT, RosMsgT>>(sub, true);
     } else {
       // Track B: Graceful Fallback (subscribe to RosMsgT or ProtoMsgT via TypeAdapter)
       if constexpr (
         std::is_same_v<ProtoMsgT, RosMsgT> || rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::is_specialized::value) {
-        auto sub = this->create_subscription<ProtoMsgT>(topic_name, qos, std::forward<CallbackT>(callback), options);
+        auto sub = this->rclcpp::Node::create_subscription<ProtoMsgT>(
+          topic_name, qos, std::forward<CallbackT>(callback), enterprise_options);
         return std::make_shared<ProtoSubscription<ProtoMsgT, RosMsgT>>(sub, false);
       } else {
         auto ros_callback = [user_callback = std::forward<CallbackT>(callback)](
@@ -154,10 +211,15 @@ public:
             user_callback(std::make_shared<ProtoMsgT>(std::move(proto_msg)), message_info);
           } else if constexpr (std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>>) {
             user_callback(std::make_shared<ProtoMsgT>(std::move(proto_msg)));
+          } else if constexpr (std::is_invocable_v<
+                                 CallbackT, std::unique_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>) {
+            user_callback(std::make_unique<ProtoMsgT>(std::move(proto_msg)), message_info);
+          } else if constexpr (std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>>) {
+            user_callback(std::make_unique<ProtoMsgT>(std::move(proto_msg)));
           }
         };
 
-        auto sub = this->create_subscription<RosMsgT>(topic_name, qos, ros_callback, options);
+        auto sub = this->rclcpp::Node::create_subscription<RosMsgT>(topic_name, qos, ros_callback, enterprise_options);
         return std::make_shared<ProtoSubscription<ProtoMsgT, RosMsgT>>(sub, false);
       }
     }

@@ -177,3 +177,39 @@ TEST_F(TestEnterpriseNodeIntegration, TestFlatChannelRoundTripMessageDelivery)
   EXPECT_EQ(received_text, "Hello from FlatPublisher Bypass Channel!");
   EXPECT_EQ(received_int, 999);
 }
+
+TEST_F(TestEnterpriseNodeIntegration, TestRoundTripIntraProcessZeroCopy)
+{
+  std::atomic<bool> message_received{false};
+  std::uintptr_t sent_ptr = 0;
+  std::uintptr_t received_ptr = 0;
+
+  auto intra_node =
+    std::make_shared<protoros2::EnterpriseNode>("test_intra", rclcpp::NodeOptions().use_intra_process_comms(true));
+
+  auto pub = intra_node->create_proto_publisher<protoros2_test::msg::pb::BasicTypes>("proto_roundtrip_intra", 10);
+
+  auto sub = intra_node->create_proto_subscription<protoros2_test::msg::pb::BasicTypes>(
+    "proto_roundtrip_intra", 10, [&](std::unique_ptr<protoros2_test::msg::pb::BasicTypes> msg) {
+      received_ptr = reinterpret_cast<std::uintptr_t>(msg.get());
+      message_received = true;
+    });
+
+  auto send_msg = std::make_unique<protoros2_test::msg::pb::BasicTypes>();
+  send_msg->set_string_value("Intra-process Zero-copy");
+  sent_ptr = reinterpret_cast<std::uintptr_t>(send_msg.get());
+
+  rclcpp::executors::SingleThreadedExecutor exec;
+  exec.add_node(intra_node);
+
+  pub->publish(std::move(send_msg));
+
+  auto start_time = std::chrono::steady_clock::now();
+  while (!message_received && std::chrono::steady_clock::now() - start_time < std::chrono::seconds(3)) {
+    exec.spin_some();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  EXPECT_TRUE(message_received);
+  EXPECT_EQ(sent_ptr, received_ptr);
+}

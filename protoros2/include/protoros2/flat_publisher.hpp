@@ -91,6 +91,10 @@ public:
     if constexpr (std::is_base_of_v<google::protobuf::Message, ProtoMsgT>) {
       backend_->publish_protobuf(proto_msg);
     } else {
+      static_assert(
+        std::is_trivially_copyable_v<ProtoMsgT>,
+        "FlatPublisher only supports Protobuf messages or trivially copyable POD types! TypeAdapter mapping for "
+        "complex types is not supported over Flat channel.");
       backend_->publish_raw(&proto_msg, sizeof(ProtoMsgT));
     }
 #endif

@@ -46,7 +46,7 @@ class ProtoPublisher
 {
 public:
   using SharedPtr = std::shared_ptr<ProtoPublisher<ProtoMsgT, RosMsgT>>;
-  using RawPublisherPtr = typename rclcpp::Publisher<RosMsgT>::SharedPtr;
+  using RawPublisherPtr = typename rclcpp::Publisher<ProtoMsgT>::SharedPtr;
 
   explicit ProtoPublisher(RawPublisherPtr pub) : pub_(std::move(pub))
   {
@@ -82,18 +82,55 @@ public:
       // ==========================================
       // Track B: Graceful Fallback (CDR / TypeAdapter mode)
       // ==========================================
-      if constexpr (std::is_same_v<ProtoMsgT, RosMsgT>) {
-        // If RosMsgT == ProtoMsgT, pub_ is rclcpp::Publisher<ProtoMsgT>, which will
-        // automatically invoke rclcpp::TypeAdapter if specialized.
-        pub_->publish(proto_msg);
-      } else if constexpr (rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::is_specialized::value) {
-        // Explicit conversion if TypeAdapter<ProtoMsgT, RosMsgT> is specialized
-        RosMsgT ros_msg;
-        rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::convert_to_ros_message(proto_msg, ros_msg);
-        pub_->publish(ros_msg);
-      } else {
-        pub_->publish(proto_msg);
+      pub_->publish(proto_msg);
+    }
+  }
+
+  /**
+   * @brief Publish a Protobuf message instance (unique_ptr) using smart routing for zero-copy intra-process.
+   *
+   * @param proto_msg The Protobuf message to publish.
+   */
+  void publish(std::unique_ptr<ProtoMsgT> proto_msg)
+  {
+    if (!pub_) {
+      throw std::runtime_error("ProtoPublisher underlying publisher is null");
+    }
+
+    if (is_protobuf_native_) {
+      // If there are intra-process subscriptions and TypeAdapter is available,
+      // we must pass the unique_ptr to rclcpp to allow zero-copy delivery,
+      // bypassing the manual serialization.
+      bool use_intra_process = false;
+      if constexpr (
+        std::is_same_v<ProtoMsgT, RosMsgT> || rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::is_specialized::value) {
+        if (pub_->get_intra_process_subscription_count() > 0) {
+          use_intra_process = true;
+        }
       }
+
+      if (use_intra_process) {
+        pub_->publish(std::move(proto_msg));
+        return;
+      }
+
+      // ==========================================
+      // Track A: Protobuf Fast-Path (0 TypeAdapter conversions)
+      // ==========================================
+      size_t size = proto_msg->ByteSizeLong();
+      rclcpp::SerializedMessage serialized_msg(size);
+
+      // Serialize directly to the rcl_serialized_message_t buffer
+      proto_msg->SerializeToArray(serialized_msg.get_rcl_serialized_message().buffer, static_cast<int>(size));
+      serialized_msg.get_rcl_serialized_message().buffer_length = size;
+
+      // Publish as SerializedMessage, bypassing rcl TypeAdapter conversion
+      pub_->publish(serialized_msg);
+    } else {
+      // ==========================================
+      // Track B: Graceful Fallback (CDR / TypeAdapter mode)
+      // ==========================================
+      pub_->publish(std::move(proto_msg));
     }
   }
 
