@@ -1,22 +1,42 @@
 # protoros2
 
-the name of this repo is inspired by [flatros2](https://github.com/Ekumen-OS/flatros2)
+for Chinese readers, please refer to [简体中文](README.zh.md)
 
-## overview
+## introduction
+
+zero-intrusive protobuf support for ros2.
 
 ### motivation
 
-there is old and strong demand for protobuf serialization in ros2, see [the developer of apollo suggest using protobuf in ros1(ros_comm) in 2017](https://github.com/ros/ros_comm/issues/1085)
+- in 2013, the [ros2 design artical: ROS2 Message Research](https://design.ros2.org/articles/serialization.html) suggest that Serialization should be optional, and should use existing library
+- the arch of ros2 derives from [ros2 design artical: ROS on DDS](https://design.ros2.org/articles/ros_on_dds.html), but there is a clear trend that serialization agnostic middleware like iceoryx, ecal, and zenoh are becoming popular.
+- the report [eprosima: Apache Thrift vs Protocol Buffers vs Fast Buffers](https://www.eprosima.com/developer-resources/performance/apache-thrift-vs-protocol-buffers-vs-fast-buffers) shows that the performance of fastcdr better than protobuf(v2.5) in pubsub benchmark, but new high-performance features have been introduced, including [protobuf: arenas](https://protobuf.dev/reference/cpp/arenas/), [protobuf: String View APIs](https://protobuf.dev/reference/cpp/string-view/), [protobuf: ctype=CORD](https://protobuf.dev/news/2023-04-11/), [protobuf: New RepeatedPtrField Layout](https://protobuf.dev/news/2025-09-19/#cpp-repeatedptrfield-layout)
+- protobuf is backed by Google and widely used across the AI industry.
+- many robotics/sdv/ai middlewares are using protobuf, like [the developer of apollo suggest using protobuf in ros1(ros_comm) in 2017](https://github.com/ros/ros_comm/issues/1085)
+- protobuf has traditional advantages such as ease of use, version compatibility, multi-language support, edge/cloud/mcu compatibility.
 
 ### related work
 
-[rosidl_typesupport_protobuf](https://github.com/eclipse-ecal/rosidl_typesupport_protobuf) (and many forks)
+early work:
 
-[ros-central-registry: the protobuf cpp example of bazel ros2](https://github.com/intrinsic-opensource/ros-central-registry/blob/main/examples)
+- [ros_protobuf: using protobuf in ROS1](https://github.com/Karsten1987/ros_protobuf/)
 
-[proto2ros: proto-rosidl(msg) conversion](https://github.com/rai-opensource/proto2ros)
+recent work:
+
+- [eclipse-ecal: rosidl_typesupport_protobuf](https://github.com/eclipse-ecal/rosidl_typesupport_protobuf) (and many forks)
+- [google: ros-central-registry: the protobuf cpp example of bazel ros2](https://github.com/intrinsic-opensource/ros-central-registry/blob/main/examples)
+- [boston dynamics: proto2ros: proto-rosidl(msg) conversion](https://github.com/rai-opensource/proto2ros)
 
 ### what protoros2 do
+
+this repo provides protobuf support to ros2, without any modification to ros2core(rclcpp, rcl, rmw).
+
+- uncompromise protobuf usage in ros2: use protobuf as msg definition, pb.h as struct, publish the pb struct through rmw, transport pb binary through mw, use ros2cli to check, use rosbag2 to record, and use mcap-cli to read bag, all with protobuf serdes, remain interoperability with prebuilt ros2 system that use rosidl.
+- performance improvement: use rclcpp::SerializedMessage to direct publish the protobuf serialized message to mw, to avoid 4x typeadaption conversions in rclcpp layer.
+- performance bonus: a bypass pubsub mechanism based on iceoryx and flatbuffer(protobuf) to get near-zero-copy data transport(1x ser and 1x deser).
+- enterprise grade experience: an unified rclcpp node interface enterprise_node provides features above.
+
+## design
 
 ```
 ===================== Third-Party Open-Source Foundations (Zero-Intrusive / Read-Only) =====================
@@ -49,9 +69,9 @@ there is old and strong demand for protobuf serialization in ros2, see [the deve
 +--------------------------------------+                          +--------------------------------------+
 ```
 
-## design
+## demo
 
-## setup
+### setup
 
 import external code (use the fork rather than the official repo)
 
@@ -59,8 +79,6 @@ import external code (use the fork rather than the official repo)
 cd ./3rdparty
 vcs import < ../ros2-core.repos
 ```
-
-## demo
 
 ### usecaseA: use rosidl(msg) as the SSOT(single source of truth)
 
@@ -407,6 +425,8 @@ ros2 run protoros2_example enterprise_proto_intra_demo
 
 ## acknowledgement
 
-[agy-cli](https://antigravity.google/docs/cli/overview)
+the code is in taste driven development by [agy-cli](https://antigravity.google/docs/cli/overview)
+
+the name of the repo is inspired by [flatros2](https://github.com/Ekumen-OS/flatros2)
 
 ## todo
