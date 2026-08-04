@@ -191,24 +191,6 @@ ros2 run protoros2_example mcap_ros2_reader.py ./proto_msg_rmw_ecal_both/0_*.mca
 ros2 run protoros2_example mcap_proto_reader.py ./proto_msg_rmw_ecal_both/0_*.mcap
 ```
 
-##### ucA.3.2: run with rmw_iceoryx_proto_cpp
-
-need to import rmw_iceoryx
-
-```sh
-cd ./3rdparty
-vcs import < ../iceoryx.repos
-```
-
-```sh
-export RMW_IMPLEMENTATION=rmw_icecoryx_cpp
-# start iceoryx daemon first
-iox-roudi
-# 1. rclcpp with protobuf typesupport
-ros2 run protoros2_example example_proto_publisher
-ros2 run protoros2_example example_proto_subscriber
-```
-
 ### usecaseB: use proto as the SSOT
 
 need to import proto2ros (use the fork rather than the official repo)
@@ -430,3 +412,8 @@ the code is in taste driven development by [agy-cli](https://antigravity.google/
 the name of the repo is inspired by [flatros2](https://github.com/Ekumen-OS/flatros2)
 
 ## todo
+
+- [ ] add system_test
+- [ ] add ci
+- [ ] rmw_iceoryx_proto_cpp support
+- [ ] enterprise_flat use iceoryx2
