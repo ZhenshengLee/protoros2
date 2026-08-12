@@ -66,21 +66,22 @@ public:
     }
 
     auto timer_callback = [this]() -> void {
-      protoros2_example::msg::pb::CompressedImage message;
+      google::protobuf::Arena arena;
+      auto * message = google::protobuf::Arena::CreateMessage<protoros2_example::msg::pb::CompressedImage>(&arena);
       auto now_ns = std::chrono::high_resolution_clock::now().time_since_epoch();
       auto sec_part = std::chrono::duration_cast<std::chrono::seconds>(now_ns);
       auto nsec_part = std::chrono::duration_cast<std::chrono::nanoseconds>(now_ns - sec_part);
-      message.mutable_timestamp()->set_seconds(sec_part.count());
-      message.mutable_timestamp()->set_nanos(nsec_part.count());
-      message.set_frame_id("camera_front");
-      message.set_format("jpeg");
-      message.set_data(image_bytes_.data(), image_bytes_.size());
+      message->mutable_timestamp()->set_seconds(sec_part.count());
+      message->mutable_timestamp()->set_nanos(nsec_part.count());
+      message->set_frame_id("camera_front");
+      message->set_format("jpeg");
+      message->set_data(image_bytes_.data(), image_bytes_.size());
 
       auto start_ts = std::chrono::high_resolution_clock::now();
       if (use_flat_channel_) {
-        flat_pub_->publish(message);
+        flat_pub_->publish(*message);
       } else {
-        proto_pub_->publish(message);
+        proto_pub_->publish(*message);
       }
       auto end_ts = std::chrono::high_resolution_clock::now();
       double publish_ms = std::chrono::duration<double, std::milli>(end_ts - start_ts).count();

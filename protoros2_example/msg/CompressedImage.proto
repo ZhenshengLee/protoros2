@@ -6,6 +6,8 @@ import "google/protobuf/timestamp.proto";
 
 // must follow: <ros2_package_name>.<folder_name>.pb
 package protoros2_example.msg.pb;
+// not necessary: enabled by default
+option cc_enable_arenas = true;
 
 // A compressed image
 message CompressedImage {

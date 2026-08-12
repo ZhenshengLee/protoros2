@@ -148,38 +148,66 @@ public:
         if (!serialized_msg) {
           return;
         }
-        ProtoMsgT proto_msg;
+
         const auto & rcl_msg = serialized_msg->get_rcl_serialized_message();
-        if (proto_msg.ParseFromArray(rcl_msg.buffer, static_cast<int>(rcl_msg.buffer_length))) {
-          if constexpr (std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &>) {
-            user_callback(proto_msg, message_info);
-          } else if constexpr (std::is_invocable_v<CallbackT, const ProtoMsgT &>) {
-            user_callback(proto_msg);
-          } else if constexpr (std::is_invocable_v<
-                                 CallbackT, std::shared_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>) {
-            user_callback(std::make_shared<ProtoMsgT>(std::move(proto_msg)), message_info);
-          } else if constexpr (std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>>) {
-            user_callback(std::make_shared<ProtoMsgT>(std::move(proto_msg)));
-          } else if constexpr (std::is_invocable_v<
-                                 CallbackT, std::unique_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>) {
-            user_callback(std::make_unique<ProtoMsgT>(std::move(proto_msg)), message_info);
-          } else if constexpr (std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>>) {
-            user_callback(std::make_unique<ProtoMsgT>(std::move(proto_msg)));
+
+        if constexpr (
+          std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &> ||
+          std::is_invocable_v<CallbackT, const ProtoMsgT &>) {
+          google::protobuf::Arena arena;
+          auto * proto_msg = google::protobuf::Arena::CreateMessage<ProtoMsgT>(&arena);
+          if (proto_msg->ParseFromArray(rcl_msg.buffer, static_cast<int>(rcl_msg.buffer_length))) {
+            if constexpr (std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &>) {
+              user_callback(*proto_msg, message_info);
+            } else {
+              user_callback(*proto_msg);
+            }
           } else {
-            static_assert(
-              std::is_invocable_v<CallbackT, const ProtoMsgT &> ||
-                std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &> ||
-                std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>> ||
-                std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>, const rclcpp::MessageInfo &> ||
-                std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>> ||
-                std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>,
-              "Unsupported callback signature for ProtoSubscription");
+            RCLCPP_ERROR(
+              rclcpp::get_logger("ProtoSubscription"), "Failed to parse Protobuf message (length: %zu)",
+              static_cast<size_t>(rcl_msg.buffer_length));
+          }
+        } else if constexpr (
+          std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>, const rclcpp::MessageInfo &> ||
+          std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>>) {
+          auto shared_arena = std::make_shared<google::protobuf::Arena>();
+          auto * proto_msg = google::protobuf::Arena::CreateMessage<ProtoMsgT>(shared_arena.get());
+          if (proto_msg->ParseFromArray(rcl_msg.buffer, static_cast<int>(rcl_msg.buffer_length))) {
+            auto aliased_ptr = std::shared_ptr<ProtoMsgT>(shared_arena, proto_msg);
+            if constexpr (std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>) {
+              user_callback(aliased_ptr, message_info);
+            } else {
+              user_callback(aliased_ptr);
+            }
+          } else {
+            RCLCPP_ERROR(
+              rclcpp::get_logger("ProtoSubscription"), "Failed to parse Protobuf message (length: %zu)",
+              static_cast<size_t>(rcl_msg.buffer_length));
+          }
+        } else if constexpr (
+          std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>, const rclcpp::MessageInfo &> ||
+          std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>>) {
+          auto proto_msg = std::make_unique<ProtoMsgT>();
+          if (proto_msg->ParseFromArray(rcl_msg.buffer, static_cast<int>(rcl_msg.buffer_length))) {
+            if constexpr (std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>) {
+              user_callback(std::move(proto_msg), message_info);
+            } else {
+              user_callback(std::move(proto_msg));
+            }
+          } else {
+            RCLCPP_ERROR(
+              rclcpp::get_logger("ProtoSubscription"), "Failed to parse Protobuf message (length: %zu)",
+              static_cast<size_t>(rcl_msg.buffer_length));
           }
         } else {
-          RCLCPP_ERROR(
-            rclcpp::get_logger("ProtoSubscription"),
-            "Failed to parse Protobuf message from SerializedMessage buffer (length: %zu)",
-            static_cast<size_t>(rcl_msg.buffer_length));
+          static_assert(
+            std::is_invocable_v<CallbackT, const ProtoMsgT &> ||
+              std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &> ||
+              std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>> ||
+              std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>, const rclcpp::MessageInfo &> ||
+              std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>> ||
+              std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>,
+            "Unsupported callback signature for ProtoSubscription");
         }
       };
 

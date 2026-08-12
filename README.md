@@ -353,6 +353,9 @@ ros2 run protoros2_example enterprise_image_talker --ros-args -p image_path:=192
 ros2 run protoros2_example enterprise_image_talker --ros-args -p image_path:=6000_4000.jpg -p frequency:=5.0
 ```
 
+benchmark results:
+- for 1080p (3.3MB) image transport, the talker publish latency of `flat` vs `proto(rmw_ecal_proto_cpp)` is `~0.56 ms` vs `~1.26 ms`.
+
 ### usecaseD: replace default rclcpp::node with enterprise node
 
 enterprise_proto natively supports ROS 2 standard paradigms (WaitSet, Component, CallbackGroup) through its rclcpp::SubscriptionBase proxy. enterprise_flat provides custom waitables to adapt Iceoryx to the ROS 2 executor ecosystem.
@@ -413,7 +416,14 @@ the name of the repo is inspired by [flatros2](https://github.com/Ekumen-OS/flat
 
 ## todo
 
+protobuf serdes performance
+
+- [ ] ctype=CORD (not support in ubuntu 26.04 default apt package)
+- [ ] ctype=string_view
+
+protoros2 software components
+
 - [ ] add system_test
 - [ ] add ci
 - [ ] rmw_iceoryx_proto_cpp support
-- [ ] enterprise_flat use iceoryx2
+- [ ] enterprise_flat use iceoryx2 backend

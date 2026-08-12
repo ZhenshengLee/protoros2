@@ -161,10 +161,11 @@ public:
 #if defined(PROTO_SSOT_ONLY)
         if (is_flatbuffer_vec) {
           google::protobuf::io::ArrayInputStream raw_input(payload, static_cast<int>(size));
-          reused_msg_.Clear();
-          if (reused_msg_.ParseFromZeroCopyStream(&raw_input)) {
+          google::protobuf::Arena arena;
+          auto * msg = google::protobuf::Arena::CreateMessage<ProtoMsgT>(&arena);
+          if (msg->ParseFromZeroCopyStream(&raw_input)) {
             if (this->callback_) {
-              this->callback_(reused_msg_);
+              this->callback_(*msg);
             }
           } else {
             RCLCPP_ERROR(
@@ -177,10 +178,11 @@ public:
           // Parse directly from payload whether it was wrapped in flatbuffer or not.
           // In the raw protobuf mode, is_flatbuffer_vec is false but we still parse the raw bytes.
           google::protobuf::io::ArrayInputStream raw_input(payload, static_cast<int>(size));
-          reused_msg_.Clear();
-          if (reused_msg_.ParseFromZeroCopyStream(&raw_input)) {
+          google::protobuf::Arena arena;
+          auto* msg = google::protobuf::Arena::CreateMessage<ProtoMsgT>(&arena);
+          if (msg->ParseFromZeroCopyStream(&raw_input)) {
             if (this->callback_) {
-              this->callback_(reused_msg_);
+              this->callback_(*msg);
             }
           } else {
             RCLCPP_ERROR(
@@ -347,7 +349,6 @@ private:
   std::function<void(const ProtoMsgT &)> callback_;
   std::unique_ptr<details::FlatSubscriptionBackend> backend_;
   std::shared_ptr<FlatSubscriptionWaitable<ProtoMsgT, RosMsgT>> waitable_;
-  ProtoMsgT reused_msg_;
 };
 
 }  // namespace protoros2
