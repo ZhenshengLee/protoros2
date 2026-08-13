@@ -61,14 +61,16 @@ public:
   }
 
   explicit EnterpriseNode(const std::string & node_name, const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
-  : rclcpp::Node(node_name, apply_enterprise_defaults(options))
+  : rclcpp::Node(node_name, apply_enterprise_defaults(options)),
+    flat_backend_(details::create_enterprise_node_backend(node_name))
   {
   }
 
   explicit EnterpriseNode(
     const std::string & node_name, const std::string & namespace_,
     const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
-  : rclcpp::Node(node_name, namespace_, apply_enterprise_defaults(options))
+  : rclcpp::Node(node_name, namespace_, apply_enterprise_defaults(options)),
+    flat_backend_(details::create_enterprise_node_backend(node_name))
   {
   }
 
@@ -154,13 +156,13 @@ public:
         if constexpr (
           std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &> ||
           std::is_invocable_v<CallbackT, const ProtoMsgT &>) {
-          google::protobuf::Arena arena;
-          auto * proto_msg = google::protobuf::Arena::CreateMessage<ProtoMsgT>(&arena);
-          if (proto_msg->ParseFromArray(rcl_msg.buffer, static_cast<int>(rcl_msg.buffer_length))) {
+          static thread_local ProtoMsgT cached_msg;
+          cached_msg.Clear();
+          if (cached_msg.ParseFromArray(rcl_msg.buffer, static_cast<int>(rcl_msg.buffer_length))) {
             if constexpr (std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &>) {
-              user_callback(*proto_msg, message_info);
+              user_callback(cached_msg, message_info);
             } else {
-              user_callback(*proto_msg);
+              user_callback(cached_msg);
             }
           } else {
             RCLCPP_ERROR(
@@ -270,7 +272,7 @@ public:
   {
     (void)qos;
     (void)options;
-    return std::make_shared<FlatPublisher<ProtoMsgT, RosMsgT>>(topic_name);
+    return std::make_shared<FlatPublisher<ProtoMsgT, RosMsgT>>(flat_backend_, topic_name);
   }
 
   /**
@@ -312,7 +314,7 @@ public:
       }
     };
 
-    auto sub = std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(topic_name, cb_wrapper, mode);
+    auto sub = std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(flat_backend_, topic_name, cb_wrapper, mode);
     if (options.callback_group != nullptr || mode == FlatSubscriptionMode::WaitSetPull) {
       this->get_node_waitables_interface()->add_waitable(sub->get_waitable(), options.callback_group);
     }
@@ -337,12 +339,15 @@ public:
   {
     (void)qos;
     std::function<void(const ProtoMsgT &)> empty_cb = nullptr;
-    auto sub = std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(topic_name, empty_cb, mode);
+    auto sub = std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(flat_backend_, topic_name, empty_cb, mode);
     if (options.callback_group != nullptr) {
       this->get_node_waitables_interface()->add_waitable(sub->get_waitable(), options.callback_group);
     }
     return sub;
   }
+
+private:
+  std::shared_ptr<details::EnterpriseNodeBackend> flat_backend_;
 };
 
 }  // namespace protoros2

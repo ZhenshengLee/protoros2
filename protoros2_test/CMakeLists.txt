@@ -17,8 +17,8 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(rosidl_adapter_proto REQUIRED)
 find_package(rosidl_typesupport_protobuf_cpp REQUIRED)
 find_package(protoros2 REQUIRED)
-find_package(iceoryx_posh REQUIRED)
-find_package(iceoryx_hoofs REQUIRED)
+find_package(iceoryx2-cxx REQUIRED)
+find_package(iceoryx2-c REQUIRED)
 find_package(flatbuffers REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -107,8 +107,8 @@ if(BUILD_TESTING AND PROTO_SSOT_ONLY)
     )
     target_link_libraries(test_type_mapping_consistency
       rclcpp::rclcpp
-      iceoryx_posh::iceoryx_posh
-      iceoryx_hoofs::iceoryx_hoofs
+      iceoryx2-cxx::shared-lib-cxx
+      iceoryx2-c::shared-lib
       flatbuffers::flatbuffers
       ${cpp_interfaces}
       ${protobuf_cpp_interfaces}

@@ -66,22 +66,21 @@ public:
     }
 
     auto timer_callback = [this]() -> void {
-      google::protobuf::Arena arena;
-      auto * message = google::protobuf::Arena::CreateMessage<protoros2_example::msg::pb::CompressedImage>(&arena);
+      cached_msg_.Clear();
       auto now_ns = std::chrono::high_resolution_clock::now().time_since_epoch();
       auto sec_part = std::chrono::duration_cast<std::chrono::seconds>(now_ns);
       auto nsec_part = std::chrono::duration_cast<std::chrono::nanoseconds>(now_ns - sec_part);
-      message->mutable_timestamp()->set_seconds(sec_part.count());
-      message->mutable_timestamp()->set_nanos(nsec_part.count());
-      message->set_frame_id("camera_front");
-      message->set_format("jpeg");
-      message->set_data(image_bytes_.data(), image_bytes_.size());
+      cached_msg_.mutable_timestamp()->set_seconds(sec_part.count());
+      cached_msg_.mutable_timestamp()->set_nanos(nsec_part.count());
+      cached_msg_.set_frame_id("camera_front");
+      cached_msg_.set_format("jpeg");
+      cached_msg_.set_data(image_bytes_.data(), image_bytes_.size());
 
       auto start_ts = std::chrono::high_resolution_clock::now();
       if (use_flat_channel_) {
-        flat_pub_->publish(*message);
+        flat_pub_->publish(cached_msg_);
       } else {
-        proto_pub_->publish(*message);
+        proto_pub_->publish(cached_msg_);
       }
       auto end_ts = std::chrono::high_resolution_clock::now();
       double publish_ms = std::chrono::duration<double, std::milli>(end_ts - start_ts).count();
@@ -183,6 +182,7 @@ private:
   bool use_flat_channel_{true};
   size_t count_;
 
+  protoros2_example::msg::pb::CompressedImage cached_msg_;
   protoros2::FlatPublisher<protoros2_example::msg::pb::CompressedImage>::SharedPtr flat_pub_;
   protoros2::ProtoPublisher<protoros2_example::msg::pb::CompressedImage>::SharedPtr proto_pub_;
   rclcpp::TimerBase::SharedPtr timer_;

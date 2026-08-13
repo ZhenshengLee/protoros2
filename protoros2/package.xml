@@ -16,8 +16,7 @@
   <depend>rmw</depend>
   <depend>proto2ros</depend>
   <depend>rosidl_typesupport_protobuf_cpp</depend>
-  <depend>iceoryx_posh</depend>
-  <depend>iceoryx_hoofs</depend>
+
   <depend>flatbuffers</depend>
 
   <export>

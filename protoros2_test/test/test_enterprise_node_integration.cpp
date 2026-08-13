@@ -69,7 +69,7 @@ TEST_F(TestEnterpriseNodeIntegration, TestFlatChannelRoutingAndAccessors)
     "flat_routing_topic", 10, [](const protoros2_test::msg::pb::BasicTypes &) {});
   ASSERT_NE(sub, nullptr);
   EXPECT_EQ(sub->get_subscription_base(), nullptr);
-  EXPECT_NE(sub->get_iox_subscriber(), nullptr);
+  EXPECT_NE(sub->get_backend_handle(), nullptr);
   EXPECT_STREQ(sub->get_topic_name(), "/flat_routing_topic");
   EXPECT_TRUE(sub->is_bypass_channel());
 

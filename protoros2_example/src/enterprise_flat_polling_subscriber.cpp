@@ -27,8 +27,9 @@ class EnterpriseFlatPollingSubscriberNode : public protoros2::EnterpriseNode
 public:
   EnterpriseFlatPollingSubscriberNode() : EnterpriseNode("enterprise_flat_polling_subscriber_node")
   {
-    // Create a PollingSubscription (Pull Mode) with MutuallyExclusive callback group option
-    auto cb_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    // Align with autoware_utils_rclcpp: Create a CallbackGroup that is NOT automatically added to the node's executor.
+    // This prevents the executor from stealing messages or causing WaitSet conflicts.
+    auto cb_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive, false);
     rclcpp::SubscriptionOptions sub_opt;
     sub_opt.callback_group = cb_group;
 

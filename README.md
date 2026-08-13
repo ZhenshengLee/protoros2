@@ -33,7 +33,7 @@ this repo provides protobuf support to ros2, without any modification to ros2cor
 
 - uncompromise protobuf usage in ros2: use protobuf as msg definition, pb.h as struct, publish the pb struct through rmw, transport pb binary through mw, use ros2cli to check, use rosbag2 to record, and use mcap-cli to read bag, all with protobuf serdes, remain interoperability with prebuilt ros2 system that use rosidl.
 - performance improvement: use rclcpp::SerializedMessage to direct publish the protobuf serialized message to mw, to avoid 4x typeadaption conversions in rclcpp layer.
-- performance bonus: a bypass pubsub mechanism based on iceoryx and flatbuffer(protobuf) to get near-zero-copy data transport(1x ser and 1x deser).
+- performance bonus: a bypass pubsub mechanism based on iceoryx2 and flatbuffer(protobuf) to get near-zero-copy data transport(1x ser and 1x deser).
 - enterprise grade experience: an unified rclcpp node interface enterprise_node provides features above.
 
 ## design
@@ -329,7 +329,6 @@ ros2 run protoros2_example enterprise_proto_subscriber
 
 ```sh
 export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
-iox-roudi
 ros2 run protoros2_example enterprise_flat_publisher
 ros2 run protoros2_example enterprise_flat_subscriber
 ```
@@ -337,9 +336,6 @@ ros2 run protoros2_example enterprise_flat_subscriber
 #### ucC.3 image transport benchmark
 
 ```sh
-# start roudi first
-iox-roudi &
-```
 
 ```sh
 ros2 run protoros2_example enterprise_image_listener --ros-args -p decode_and_verify:=false
@@ -353,19 +349,14 @@ ros2 run protoros2_example enterprise_image_talker --ros-args -p image_path:=192
 ros2 run protoros2_example enterprise_image_talker --ros-args -p image_path:=6000_4000.jpg -p frequency:=5.0
 ```
 
-benchmark results:
-- for 1080p (3.3MB) image transport, the talker publish latency of `flat` vs `proto(rmw_ecal_proto_cpp)` is `~0.56 ms` vs `~1.26 ms`.
-
 ### usecaseD: replace default rclcpp::node with enterprise node
 
-enterprise_proto natively supports ROS 2 standard paradigms (WaitSet, Component, CallbackGroup) through its rclcpp::SubscriptionBase proxy. enterprise_flat provides custom waitables to adapt Iceoryx to the ROS 2 executor ecosystem.
+enterprise_proto natively supports ROS 2 standard paradigms (WaitSet, Component, CallbackGroup) through its rclcpp::SubscriptionBase proxy. enterprise_flat provides custom waitables to adapt Iceoryx2 to the ROS 2 executor ecosystem.
 
 #### ucD.1: callback group subscriber
 
 ```sh
 export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
-# start iceoryx daemon first
-iox-roudi &
 
 ros2 run protoros2_example enterprise_flat_publisher
 ros2 run protoros2_example enterprise_flat_callback_group_subscriber
@@ -375,8 +366,6 @@ ros2 run protoros2_example enterprise_flat_callback_group_subscriber
 
 ```sh
 export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
-# start iceoryx daemon first
-iox-roudi &
 
 ros2 run protoros2_example enterprise_flat_publisher
 ros2 run protoros2_example enterprise_flat_waitset_subscriber
@@ -386,10 +375,8 @@ ros2 run protoros2_example enterprise_flat_waitset_subscriber
 
 ```sh
 export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
-# start iceoryx daemon first
-iox-roudi &
 
-# 1. Flat Channel Polling Subscriber (Iceoryx Waitable)
+# 1. Flat Channel Polling Subscriber (Iceoryx2 Waitable)
 ros2 run protoros2_example enterprise_flat_publisher
 ros2 run protoros2_example enterprise_flat_polling_subscriber
 
@@ -423,7 +410,10 @@ protobuf serdes performance
 
 protoros2 software components
 
+- [x] enterprise_flat use iceoryx2 backend
+- [ ] rmw_zenoh_proto_cpp support
+
+protoros2 software stability
+
 - [ ] add system_test
 - [ ] add ci
-- [ ] rmw_iceoryx_proto_cpp support
-- [ ] enterprise_flat use iceoryx2 backend

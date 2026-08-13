@@ -30,6 +30,7 @@ RUN set -x; \
     && wget --ftp-user=zs --ftp-password=zs -q -O- ftp://${GA_FTP_SERVER}/DiskT/docker_res/dbg/tmux_plugins.tgz | tar -xz -C /opt \
     && mkdir -p /opt/gsd/x86_64/ \
     && wget --ftp-user=zs --ftp-password=zs -q -O- ftp://${GA_FTP_SERVER}/DiskT/docker_res/3rdparty/ecal-5.13-x86-gcc9.4.0.tgz | tar -xz -C /opt/gsd/x86_64/ \
+    && wget --ftp-user=zs --ftp-password=zs -q -O- ftp://${GA_FTP_SERVER}/DiskT/docker_res/3rdparty/iceoryx2-0.9.3-x86-u2604.tgz | tar -xz -C /opt/gsd/x86_64/ \
     && wget --ftp-user=zs --ftp-password=zs -q -O /usr/bin/mcap ftp://${GA_FTP_SERVER}/DiskT/docker_res/mlops/mcap-linux-amd64 \
     && chmod 755 /usr/bin/mcap \
     && rm -rf /var/lib/apt/lists/* \

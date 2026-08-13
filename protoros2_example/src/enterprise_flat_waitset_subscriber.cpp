@@ -31,24 +31,21 @@ public:
     flat_sub_ = this->create_flat_subscription<protoros2_example::msg::pb::ExampleMessage>(
       "flat_msg_topic", 10, protoros2::FlatSubscriptionMode::WaitSetPull);
 
+    if (flat_sub_->get_waitable()) {
+      wait_set_.add_waitable(flat_sub_->get_waitable());
+    } else if (flat_sub_->get_guard_condition()) {
+      wait_set_.add_guard_condition(flat_sub_->get_guard_condition());
+    }
+
     // Create a timer to periodically run waitset loop and check for messages
     timer_ = this->create_wall_timer(100ms, [this]() {
-      rclcpp::WaitSet wait_set;
-      if (flat_sub_->get_waitable()) {
-        wait_set.add_waitable(flat_sub_->get_waitable());
-      } else if (flat_sub_->get_guard_condition()) {
-        wait_set.add_guard_condition(flat_sub_->get_guard_condition());
-      }
-
-      auto result = wait_set.wait(50ms);
+      auto result = wait_set_.wait(50ms);
       if (result.kind() == rclcpp::WaitResultKind::Ready) {
         protoros2_example::msg::pb::ExampleMessage msg;
         while (flat_sub_->take(msg)) {
           RCLCPP_INFO(this->get_logger(), "WaitSet woke up! Taken message: '%s'", msg.message().c_str());
         }
       }
-
-      // WaitSet destructor automatically handles the in_use_by_wait_set_state cleanup.
     });
 
     RCLCPP_INFO(this->get_logger(), "EnterpriseFlatWaitsetSubscriber created and listening via WaitSet.");
@@ -57,6 +54,7 @@ public:
 private:
   protoros2::FlatSubscription<protoros2_example::msg::pb::ExampleMessage>::SharedPtr flat_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::WaitSet wait_set_;
 };
 
 int main(int argc, char * argv[])

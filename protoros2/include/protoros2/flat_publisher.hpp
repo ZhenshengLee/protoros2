@@ -22,7 +22,7 @@
 
 #include "google/protobuf/message.h"
 #include "protoros2/flat_backend.hpp"
-#include "protoros2/posh_runtime_helper.hpp"
+
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/serialized_message.hpp"
 #include "rclcpp/type_adapter.hpp"
@@ -47,7 +47,8 @@ class FlatPublisher
 public:
   using SharedPtr = std::shared_ptr<FlatPublisher<ProtoMsgT, RosMsgT>>;
 
-  explicit FlatPublisher(const std::string & topic_name) : topic_name_(topic_name)
+  explicit FlatPublisher(std::shared_ptr<details::EnterpriseNodeBackend> node_backend, const std::string & topic_name)
+  : topic_name_(topic_name), backend_(details::create_flat_publisher_backend(node_backend, topic_name))
   {
     if (topic_name_.empty() || topic_name_[0] != '/') {
       topic_name_ = "/" + topic_name_;
@@ -59,9 +60,6 @@ public:
     is_protobuf_native_ = true;
 #endif
 
-    ensure_posh_runtime_initialized();
-
-    backend_ = details::create_flat_publisher_backend(topic_name_);
     if (backend_) {
       backend_->offer();
     }
@@ -107,7 +105,7 @@ public:
   rclcpp::PublisherBase::SharedPtr get_publisher_base() const { return nullptr; }
 
   /// Get the native Iceoryx UntypedPublisher instance.
-  iox::popo::UntypedPublisher * get_iox_publisher() const { return backend_ ? backend_->get_iox_publisher() : nullptr; }
+  void * get_backend_handle() const { return backend_ ? backend_->get_backend_handle() : nullptr; }
 
   /// Check whether the current RMW is running in native Protobuf mode or PROTO_SSOT_ONLY.
   bool is_protobuf_native() const { return is_protobuf_native_; }
