@@ -17,8 +17,6 @@
   <depend>proto2ros</depend>
   <depend>rosidl_typesupport_protobuf_cpp</depend>
 
-  <depend>flatbuffers</depend>
-
   <export>
     <build_type>ament_cmake</build_type>
   </export>

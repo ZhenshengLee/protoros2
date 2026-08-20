@@ -51,6 +51,12 @@ namespace protoros2
 class EnterpriseNode : public rclcpp::Node
 {
 public:
+  /**
+   * @brief Default node policy for enterprise nodes (performance-oriented lean node):
+   * rosout, parameter services/events and implicit parameter declaration are disabled.
+   * This is a default, not a hard policy: adjust the returned NodeOptions (e.g. re-enable
+   * start_parameter_services) before passing them to the constructor if a node needs them.
+   */
   static rclcpp::NodeOptions apply_enterprise_defaults(rclcpp::NodeOptions options)
   {
     return options.enable_rosout(false)
@@ -78,6 +84,8 @@ public:
   // ENTERPRISE API GUARD
   // ==============================================================================
   // 生产环境严禁使用原生 publisher，请使用 create_proto_publisher / create_flat_publisher
+  // 注意：= delete 只拦截通过 EnterpriseNode（及其派生类）类型的调用，属"防手滑"守卫；
+  // 通过基类 rclcpp::Node 引用刻意调用原生接口仍可绕过，属预期内的显式行为。
   template <typename... Args>
   void create_publisher(Args &&...) = delete;
 
@@ -156,6 +164,11 @@ public:
         if constexpr (
           std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &> ||
           std::is_invocable_v<CallbackT, const ProtoMsgT &>) {
+          // Contract (mirrors the rclcpp const& callback rule, stricter in practice): the
+          // referenced message is only valid inside the callback; this thread-local buffer
+          // is reused and overwritten by the next message on the same thread. Do not retain
+          // the reference or pointers into it - copy the message or use the shared_ptr
+          // callback signature instead.
           static thread_local ProtoMsgT cached_msg;
           cached_msg.Clear();
           if (cached_msg.ParseFromArray(rcl_msg.buffer, static_cast<int>(rcl_msg.buffer_length))) {
@@ -213,6 +226,11 @@ public:
         }
       };
 
+      // Deliberately create_subscription<RosMsgT> (not <rclcpp::SerializedMessage>):
+      // upstream rclcpp's AnySubscriptionCallback natively accepts the SerializedMessage
+      // callback variant for any message type, while the RosMsgT type support keeps the
+      // topic registered under its rosidl type name, preserving ros2cli/rosbag2 and
+      // prebuilt-ROS interoperability.
       auto sub =
         this->rclcpp::Node::create_subscription<RosMsgT>(topic_name, qos, serialized_callback, enterprise_options);
       return std::make_shared<ProtoSubscription<ProtoMsgT, RosMsgT>>(sub, true);
@@ -224,33 +242,10 @@ public:
           topic_name, qos, std::forward<CallbackT>(callback), enterprise_options);
         return std::make_shared<ProtoSubscription<ProtoMsgT, RosMsgT>>(sub, false);
       } else {
-        auto ros_callback = [user_callback = std::forward<CallbackT>(callback)](
-                              const std::shared_ptr<RosMsgT> & ros_msg,
-                              const rclcpp::MessageInfo & message_info) -> void {
-          if (!ros_msg) {
-            return;
-          }
-          ProtoMsgT proto_msg;
-          rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::convert_to_custom_type(*ros_msg, proto_msg);
-          if constexpr (std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &>) {
-            user_callback(proto_msg, message_info);
-          } else if constexpr (std::is_invocable_v<CallbackT, const ProtoMsgT &>) {
-            user_callback(proto_msg);
-          } else if constexpr (std::is_invocable_v<
-                                 CallbackT, std::shared_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>) {
-            user_callback(std::make_shared<ProtoMsgT>(std::move(proto_msg)), message_info);
-          } else if constexpr (std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>>) {
-            user_callback(std::make_shared<ProtoMsgT>(std::move(proto_msg)));
-          } else if constexpr (std::is_invocable_v<
-                                 CallbackT, std::unique_ptr<ProtoMsgT>, const rclcpp::MessageInfo &>) {
-            user_callback(std::make_unique<ProtoMsgT>(std::move(proto_msg)), message_info);
-          } else if constexpr (std::is_invocable_v<CallbackT, std::unique_ptr<ProtoMsgT>>) {
-            user_callback(std::make_unique<ProtoMsgT>(std::move(proto_msg)));
-          }
-        };
-
-        auto sub = this->rclcpp::Node::create_subscription<RosMsgT>(topic_name, qos, ros_callback, enterprise_options);
-        return std::make_shared<ProtoSubscription<ProtoMsgT, RosMsgT>>(sub, false);
+        static_assert(
+          std::is_same_v<ProtoMsgT, RosMsgT> || rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::is_specialized::value,
+          "create_proto_subscription requires ProtoMsgT == RosMsgT or a rclcpp::TypeAdapter<ProtoMsgT, RosMsgT> "
+          "specialization providing convert_to_custom_type/convert_to_ros_message");
       }
     }
   }
@@ -268,11 +263,18 @@ public:
   template <typename ProtoMsgT, typename RosMsgT = ProtoMsgT>
   std::shared_ptr<FlatPublisher<ProtoMsgT, RosMsgT>> create_flat_publisher(
     const std::string & topic_name, const rclcpp::QoS & qos,
-    const rclcpp::PublisherOptions & options = rclcpp::PublisherOptions())
+    const rclcpp::PublisherOptions & options = rclcpp::PublisherOptions(),
+    size_t max_payload_bytes = kDefaultMaxFlatPayloadBytes)
   {
-    (void)qos;
     (void)options;
-    return std::make_shared<FlatPublisher<ProtoMsgT, RosMsgT>>(flat_backend_, topic_name);
+    warn_if_qos_not_honored(qos, "FlatPublisher", topic_name);
+    auto pub = std::make_shared<FlatPublisher<ProtoMsgT, RosMsgT>>(flat_backend_, topic_name, max_payload_bytes);
+    if (!pub->is_valid()) {
+      RCLCPP_WARN(
+        this->get_logger(), "FlatPublisher on '%s' is not functional: iceoryx2 backend setup failed",
+        topic_name.c_str());
+    }
+    return pub;
   }
 
   /**
@@ -295,13 +297,21 @@ public:
     const rclcpp::SubscriptionOptions & options = rclcpp::SubscriptionOptions(),
     FlatSubscriptionMode mode = FlatSubscriptionMode::CallbackPush)
   {
-    (void)qos;
+    warn_if_qos_not_honored(qos, "FlatSubscription", topic_name);
     if (options.callback_group != nullptr) {
+      if (mode == FlatSubscriptionMode::CallbackPush) {
+        RCLCPP_WARN(
+          this->get_logger(),
+          "FlatSubscription on '%s': a callback_group requires executor dispatch; mode overridden from CallbackPush "
+          "to WaitSetPull",
+          topic_name.c_str());
+      }
       mode = FlatSubscriptionMode::WaitSetPull;
     }
 
     auto cb_wrapper = [user_callback = std::forward<CallbackT>(callback)](const ProtoMsgT & proto_msg) -> void {
       if constexpr (std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &>) {
+        // The bypass channel carries no RMW provenance: MessageInfo fields (timestamps etc.) are dummy zeros.
         rclcpp::MessageInfo dummy_info;
         user_callback(proto_msg, dummy_info);
       } else if constexpr (std::is_invocable_v<CallbackT, const ProtoMsgT &>) {
@@ -312,9 +322,22 @@ public:
       } else if constexpr (std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>>) {
         user_callback(std::make_shared<ProtoMsgT>(proto_msg));
       }
+      static_assert(
+        std::is_invocable_v<CallbackT, const ProtoMsgT &, const rclcpp::MessageInfo &> ||
+          std::is_invocable_v<CallbackT, const ProtoMsgT &> ||
+          std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>, const rclcpp::MessageInfo &> ||
+          std::is_invocable_v<CallbackT, std::shared_ptr<ProtoMsgT>>,
+        "Unsupported callback signature for FlatSubscription: expected (const T&[, MessageInfo]) or "
+        "(shared_ptr<T>[, MessageInfo])");
     };
 
     auto sub = std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(flat_backend_, topic_name, cb_wrapper, mode);
+    sub->bind_waitable_back_reference(sub);
+    if (!sub->is_valid()) {
+      RCLCPP_WARN(
+        this->get_logger(), "FlatSubscription on '%s' is not functional: iceoryx2 backend setup failed",
+        topic_name.c_str());
+    }
     if (options.callback_group != nullptr || mode == FlatSubscriptionMode::WaitSetPull) {
       this->get_node_waitables_interface()->add_waitable(sub->get_waitable(), options.callback_group);
     }
@@ -337,9 +360,15 @@ public:
     const std::string & topic_name, const rclcpp::QoS & qos, FlatSubscriptionMode mode,
     const rclcpp::SubscriptionOptions & options = rclcpp::SubscriptionOptions())
   {
-    (void)qos;
+    warn_if_qos_not_honored(qos, "FlatSubscription", topic_name);
     std::function<void(const ProtoMsgT &)> empty_cb = nullptr;
     auto sub = std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(flat_backend_, topic_name, empty_cb, mode);
+    sub->bind_waitable_back_reference(sub);
+    if (!sub->is_valid()) {
+      RCLCPP_WARN(
+        this->get_logger(), "FlatSubscription on '%s' is not functional: iceoryx2 backend setup failed",
+        topic_name.c_str());
+    }
     if (options.callback_group != nullptr) {
       this->get_node_waitables_interface()->add_waitable(sub->get_waitable(), options.callback_group);
     }
@@ -347,6 +376,25 @@ public:
   }
 
 private:
+  // The iceoryx2 bypass channel is best-effort / latest-wins by design and cannot apply
+  // rclcpp QoS policies; surface a warning instead of silently discarding user settings.
+  void warn_if_qos_not_honored(const rclcpp::QoS & qos, const char * api, const std::string & topic_name)
+  {
+    const rmw_qos_profile_t & profile = qos.get_rmw_qos_profile();
+    const rmw_qos_profile_t & default_profile = rclcpp::QoS(10).get_rmw_qos_profile();
+    const bool is_default = profile.history == default_profile.history && profile.depth == default_profile.depth &&
+                            profile.reliability == default_profile.reliability &&
+                            profile.durability == default_profile.durability &&
+                            profile.liveliness == default_profile.liveliness;
+    if (!is_default) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "%s on '%s': the iceoryx2 bypass channel is best-effort/latest-wins; the supplied QoS settings have no "
+        "effect",
+        api, topic_name.c_str());
+    }
+  }
+
   std::shared_ptr<details::EnterpriseNodeBackend> flat_backend_;
 };
 

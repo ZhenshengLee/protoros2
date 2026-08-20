@@ -19,9 +19,16 @@ find_package(rosidl_typesupport_protobuf_cpp REQUIRED)
 find_package(protoros2 REQUIRED)
 find_package(iceoryx2-cxx REQUIRED)
 find_package(iceoryx2-c REQUIRED)
-find_package(flatbuffers REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+
+# colcon test 不继承 shell 的 LD_LIBRARY_PATH，从 find_package 导入的 target
+# 解析 iceoryx2 动态库目录，注入到各 gtest 的 ENVIRONMENT
+get_target_property(_iox2_lib iceoryx2-cxx::shared-lib-cxx IMPORTED_LOCATION)
+if(NOT _iox2_lib)
+  get_target_property(_iox2_lib iceoryx2-cxx::shared-lib-cxx IMPORTED_LOCATION_NOCONFIG)
+endif()
+get_filename_component(iox2_lib_dir "${_iox2_lib}" DIRECTORY)
 
 option(PROTO_SSOT "Use Proto file coexisting with rosidl_typesupport_protobuf (ucB.1)" OFF)
 option(PROTO_SSOT_ONLY "Use Proto file as the ONLY SSOT directly, bypassing rosidl_adapter_proto (ucB.2)" OFF)
@@ -70,6 +77,8 @@ if(BUILD_TESTING AND PROTO_SSOT_ONLY)
         ${PROJECT_NAME}__rosidl_generator_cpp
         ${PROJECT_NAME}_conversions
       )
+      set_tests_properties(${target_name} PROPERTIES
+        ENVIRONMENT "LD_LIBRARY_PATH=${iox2_lib_dir}:$ENV{LD_LIBRARY_PATH}")
     endif()
   endmacro()
 
@@ -109,7 +118,6 @@ if(BUILD_TESTING AND PROTO_SSOT_ONLY)
       rclcpp::rclcpp
       iceoryx2-cxx::shared-lib-cxx
       iceoryx2-c::shared-lib
-      flatbuffers::flatbuffers
       ${cpp_interfaces}
       ${protobuf_cpp_interfaces}
       ${PROJECT_NAME}__rosidl_generator_cpp
@@ -122,6 +130,8 @@ if(BUILD_TESTING AND PROTO_SSOT_ONLY)
     if(TARGET ${PROJECT_NAME}_conversions)
       add_dependencies(test_type_mapping_consistency ${PROJECT_NAME}_conversions)
     endif()
+    set_tests_properties(test_type_mapping_consistency PROPERTIES
+      ENVIRONMENT "LD_LIBRARY_PATH=${iox2_lib_dir}:$ENV{LD_LIBRARY_PATH}")
   endif()
 endif()
 
@@ -148,23 +158,19 @@ if(BUILD_TESTING AND BUILD_ENTERPRISE_TESTS AND NOT PROTO_SSOT_ONLY)
         ${PROJECT_NAME}__rosidl_generator_cpp
         ${PROJECT_NAME}_conversions
       )
+      set_tests_properties(${target_name} PROPERTIES
+        ENVIRONMENT "LD_LIBRARY_PATH=${iox2_lib_dir}:$ENV{LD_LIBRARY_PATH}")
     endif()
   endmacro()
 endif()
 
 if (BUILD_TESTING AND (PROTO_SSOT_ONLY OR BUILD_ENTERPRISE_TESTS))
-  # TODO(zs): temporarily disable integration tests that depend on RouDi
-  # protoros2_test_add_gtest(test_enterprise_node_integration
-  #     test/test_enterprise_node_integration.cpp)
-  # if(TARGET test_enterprise_node_integration)
-  #   target_include_directories(test_enterprise_node_integration PRIVATE ${protoros2_INCLUDE_DIRS})
-  # endif()
+  # iceoryx2 backend is daemonless (no RouDi needed), integration tests re-enabled
+  protoros2_test_add_gtest(test_enterprise_node_integration
+      test/test_enterprise_node_integration.cpp)
 
-  # protoros2_test_add_gtest(test_enterprise_node_paradigms
-  #     test/test_enterprise_node_paradigms.cpp)
-  # if(TARGET test_enterprise_node_paradigms)
-  #   target_include_directories(test_enterprise_node_paradigms PRIVATE ${protoros2_INCLUDE_DIRS})
-  # endif()
+  protoros2_test_add_gtest(test_enterprise_node_paradigms
+      test/test_enterprise_node_paradigms.cpp)
 
   protoros2_test_add_gtest(test_waitable test/test_waitable.cpp)
 endif()

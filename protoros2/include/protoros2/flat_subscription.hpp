@@ -43,21 +43,28 @@ class FlatSubscriptionWaitable : public rclcpp::Waitable
 public:
   using SharedPtr = std::shared_ptr<FlatSubscriptionWaitable<ProtoMsgT, RosMsgT>>;
 
-  explicit FlatSubscriptionWaitable(FlatSubscription<ProtoMsgT, RosMsgT> * subscription) : subscription_(subscription)
+  FlatSubscriptionWaitable() = default;
+
+  // Bound by the factory once the owning FlatSubscription is managed by a shared_ptr
+  // (weak_from_this() is not usable inside the subscription constructor).
+  void set_subscription(std::weak_ptr<FlatSubscription<ProtoMsgT, RosMsgT>> subscription)
   {
+    subscription_ = std::move(subscription);
   }
 
   size_t get_number_of_ready_guard_conditions() override
   {
-    return (subscription_ && subscription_->get_guard_condition()) ? 1 : 0;
+    auto sub = subscription_.lock();
+    return (sub && sub->get_guard_condition()) ? 1 : 0;
   }
 
   void add_to_wait_set(rcl_wait_set_t & wait_set) override
   {
-    if (!subscription_) {
+    auto sub = subscription_.lock();
+    if (!sub) {
       return;
     }
-    auto gc = subscription_->get_guard_condition();
+    auto gc = sub->get_guard_condition();
     if (!gc) {
       return;
     }
@@ -68,16 +75,18 @@ public:
   bool is_ready(const rcl_wait_set_t & wait_set) override
   {
     (void)wait_set;
-    return subscription_ && subscription_->has_data();
+    auto sub = subscription_.lock();
+    return sub && sub->has_data();
   }
 
   std::shared_ptr<void> take_data() override
   {
-    if (!subscription_) {
+    auto sub = subscription_.lock();
+    if (!sub) {
       return nullptr;
     }
     auto msg_ptr = std::make_shared<ProtoMsgT>();
-    if (subscription_->take(*msg_ptr)) {
+    if (sub->take(*msg_ptr)) {
       return msg_ptr;
     }
     return nullptr;
@@ -91,9 +100,10 @@ public:
 
   void execute(const std::shared_ptr<void> & data) override
   {
-    if (data && subscription_ && subscription_->get_callback()) {
+    auto sub = subscription_.lock();
+    if (data && sub && sub->get_callback()) {
       auto msg_ptr = std::static_pointer_cast<ProtoMsgT>(const_cast<std::shared_ptr<void> &>(data));
-      subscription_->get_callback()(*msg_ptr);
+      sub->get_callback()(*msg_ptr);
     }
   }
 
@@ -114,16 +124,23 @@ public:
   }
 
 private:
-  FlatSubscription<ProtoMsgT, RosMsgT> * subscription_{nullptr};
+  std::weak_ptr<FlatSubscription<ProtoMsgT, RosMsgT>> subscription_;
   std::function<void(size_t, int)> on_ready_callback_;
 };
 
 /**
  * @brief FlatSubscription represents the bypass zero-copy receiving channel
- * corresponding to FlatPublisher based on Iceoryx and FlatBuffers zero-copy reception.
+ * corresponding to FlatPublisher, based on iceoryx2 shared memory zero-copy reception.
  *
  * It supports both callback push mode (high performance direct dispatch) and
  * WaitSet / Polling / CallbackGroup executor paradigms via rclcpp::Waitable bridge.
+ *
+ * Thread contract (CallbackPush mode): the user callback is invoked on the backend's
+ * internal poll thread, NOT on an executor thread (this is the deliberate low-latency
+ * design of the bypass channel). The callback must be non-blocking and must not call
+ * node/subscription lifecycle APIs (create/destroy/reset of nodes or subscriptions),
+ * otherwise deadlocks or races may occur. Use WaitSetPull + CallbackGroup when executor
+ * threading semantics are required.
  *
  * @tparam ProtoMsgT The C++ Protobuf message class.
  * @tparam RosMsgT The ROS 2 message struct class (defaults to ProtoMsgT).
@@ -145,11 +162,8 @@ public:
 
     const char * rmw_format = rmw_get_serialization_format();
     is_protobuf_native_ = (rmw_format != nullptr && std::string(rmw_format) == "protobuf");
-#if defined(PROTO_SSOT_ONLY)
-    is_protobuf_native_ = true;
-#endif
 
-    waitable_ = std::make_shared<FlatSubscriptionWaitable<ProtoMsgT, RosMsgT>>(this);
+    waitable_ = std::make_shared<FlatSubscriptionWaitable<ProtoMsgT, RosMsgT>>();
     waitable_ptr_ = std::shared_ptr<rclcpp::Waitable>(waitable_.get(), [keep_alive = waitable_](rclcpp::Waitable * w) {
       if (w) {
         w->exchange_in_use_by_wait_set_state(false);
@@ -157,24 +171,10 @@ public:
     });
 
     backend_ = details::create_flat_subscription_backend(
-      node_backend, topic_name_, mode_, [this](const void * payload, size_t size, bool is_flatbuffer_vec) {
+      node_backend, topic_name_, mode_, [this](const void * payload, size_t size) {
         if (!payload || size == 0) {
           return;
         }
-#if defined(PROTO_SSOT_ONLY)
-        if (is_flatbuffer_vec) {
-          this->cached_msg_.Clear();
-          if (this->cached_msg_.ParseFromArray(payload, static_cast<int>(size))) {
-            if (this->callback_) {
-              this->callback_(this->cached_msg_);
-            }
-          } else {
-            RCLCPP_ERROR(
-              rclcpp::get_logger("FlatSubscription"),
-              "Failed to parse Protobuf message from ZeroCopyStream (payload size: %zu)", size);
-          }
-        }
-#else
         if constexpr (std::is_base_of_v<google::protobuf::Message, ProtoMsgT>) {
           this->cached_msg_.Clear();
           if (this->cached_msg_.ParseFromArray(payload, static_cast<int>(size))) {
@@ -184,21 +184,27 @@ public:
           } else {
             RCLCPP_ERROR(
               rclcpp::get_logger("FlatSubscription"),
-              "Failed to parse Protobuf message from ZeroCopyStream (payload size: %zu)", size);
+              "Failed to parse Protobuf message from flat payload (payload size: %zu)", size);
           }
         } else {
-          static_assert(std::is_trivially_copyable_v<ProtoMsgT>,
+          static_assert(
+            std::is_trivially_copyable_v<ProtoMsgT>,
             "FlatSubscription only supports Protobuf messages or trivially copyable POD types! "
             "TypeAdapter mapping for complex types is not supported over Flat channel.");
-          if (sizeof(ProtoMsgT) <= size && !is_flatbuffer_vec) {
+          if (size == sizeof(ProtoMsgT)) {
             ProtoMsgT msg;
             std::memcpy(&msg, payload, sizeof(ProtoMsgT));
             if (this->callback_) {
               this->callback_(msg);
             }
+          } else {
+            RCLCPP_ERROR(
+              rclcpp::get_logger("FlatSubscription"),
+              "Flat payload size %zu does not match POD type size %zu, dropping (publisher/subscriber type "
+              "mismatch?)",
+              size, sizeof(ProtoMsgT));
           }
         }
-#endif
         if (waitable_) {
           waitable_->trigger_ready();
         }
@@ -210,8 +216,25 @@ public:
   }
 
   /**
-   * @brief Take a message directly from the underlying Iceoryx queue without callback dispatch.
+   * @internal Bind the waitable's weak back-reference. Must be called by the creating
+   * factory (EnterpriseNode) immediately after this object is owned by a shared_ptr:
+   * the executor may outlive the subscription and would otherwise dereference a dangling
+   * pointer through the waitable. Weak binding makes such late access degrade to
+   * not-ready/no-data instead of undefined behavior.
+   */
+  void bind_waitable_back_reference(const std::shared_ptr<FlatSubscription> & self)
+  {
+    if (waitable_) {
+      waitable_->set_subscription(self);
+    }
+  }
+
+  /**
+   * @brief Take one message directly from the underlying Iceoryx queue without callback dispatch.
    * Useful in Polling Subscriber and WaitSet pull patterns.
+   *
+   * Latest-wins pull semantics: a single sample is taken per call; backlogged samples stay
+   * queued and are drained by subsequent calls. Do not assume one call consumes everything.
    *
    * @param out_msg Reference to the message to populate.
    * @return true if a message was taken successfully, false otherwise.
@@ -222,16 +245,10 @@ public:
       return false;
     }
     bool taken = false;
-    backend_->take_payload([&](const void * payload, size_t size, bool is_flatbuffer_vec) {
+    backend_->take_payload([&](const void * payload, size_t size) {
       if (!payload || size == 0) {
         return;
       }
-#if defined(PROTO_SSOT_ONLY)
-      if (is_flatbuffer_vec) {
-        out_msg.Clear();
-        taken = out_msg.ParseFromArray(payload, static_cast<int>(size));
-      }
-#else
       if constexpr (std::is_base_of_v<google::protobuf::Message, ProtoMsgT>) {
         out_msg.Clear();
         taken = out_msg.ParseFromArray(payload, static_cast<int>(size));
@@ -240,12 +257,11 @@ public:
           std::is_trivially_copyable_v<ProtoMsgT>,
           "FlatSubscription only supports Protobuf messages or trivially copyable POD types! TypeAdapter mapping for "
           "complex types is not supported over Flat channel.");
-        if (sizeof(ProtoMsgT) <= size && !is_flatbuffer_vec) {
+        if (size == sizeof(ProtoMsgT)) {
           std::memcpy(&out_msg, payload, sizeof(ProtoMsgT));
           taken = true;
         }
       }
-#endif
     });
     return taken;
   }
@@ -316,6 +332,9 @@ public:
 
   bool is_bypass_channel() const { return true; }
 
+  /// True when the bypass channel was fully established; false means no data will ever arrive.
+  bool is_valid() const { return backend_ && backend_->valid(); }
+
   bool is_protobuf_native() const { return is_protobuf_native_; }
 
 private:
@@ -324,7 +343,7 @@ private:
   bool is_protobuf_native_{false};
   std::function<void(const ProtoMsgT &)> callback_;
   ProtoMsgT cached_msg_;
-  std::unique_ptr<details::FlatSubscriptionBackend> backend_;
+  std::shared_ptr<details::FlatSubscriptionBackend> backend_;
   std::shared_ptr<FlatSubscriptionWaitable<ProtoMsgT, RosMsgT>> waitable_;
   std::shared_ptr<rclcpp::Waitable> waitable_ptr_;
 };

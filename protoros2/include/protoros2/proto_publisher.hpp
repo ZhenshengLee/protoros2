@@ -73,7 +73,10 @@ public:
       rclcpp::SerializedMessage serialized_msg(size);
 
       // Serialize directly to the rcl_serialized_message_t buffer
-      proto_msg.SerializeToArray(serialized_msg.get_rcl_serialized_message().buffer, static_cast<int>(size));
+      if (!proto_msg.SerializeToArray(serialized_msg.get_rcl_serialized_message().buffer, static_cast<int>(size))) {
+        RCLCPP_ERROR(rclcpp::get_logger("ProtoPublisher"), "SerializeToArray failed, dropping publish");
+        return;
+      }
       serialized_msg.get_rcl_serialized_message().buffer_length = size;
 
       // Publish as SerializedMessage, bypassing rcl TypeAdapter conversion
@@ -121,7 +124,10 @@ public:
       rclcpp::SerializedMessage serialized_msg(size);
 
       // Serialize directly to the rcl_serialized_message_t buffer
-      proto_msg->SerializeToArray(serialized_msg.get_rcl_serialized_message().buffer, static_cast<int>(size));
+      if (!proto_msg->SerializeToArray(serialized_msg.get_rcl_serialized_message().buffer, static_cast<int>(size))) {
+        RCLCPP_ERROR(rclcpp::get_logger("ProtoPublisher"), "SerializeToArray failed, dropping publish");
+        return;
+      }
       serialized_msg.get_rcl_serialized_message().buffer_length = size;
 
       // Publish as SerializedMessage, bypassing rcl TypeAdapter conversion

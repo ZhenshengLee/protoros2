@@ -33,7 +33,7 @@ this repo provides protobuf support to ros2, without any modification to ros2cor
 
 - uncompromise protobuf usage in ros2: use protobuf as msg definition, pb.h as struct, publish the pb struct through rmw, transport pb binary through mw, use ros2cli to check, use rosbag2 to record, and use mcap-cli to read bag, all with protobuf serdes, remain interoperability with prebuilt ros2 system that use rosidl.
 - performance improvement: use rclcpp::SerializedMessage to direct publish the protobuf serialized message to mw, to avoid 4x typeadaption conversions in rclcpp layer.
-- performance bonus: a bypass pubsub mechanism based on iceoryx2 and flatbuffer(protobuf) to get near-zero-copy data transport(1x ser and 1x deser).
+- performance bonus: a bypass pubsub mechanism based on iceoryx2 shared memory, serializing protobuf directly into the loaned buffer (no framing), to get near-zero-copy data transport(1x ser and 1x deser).
 - enterprise grade experience: an unified rclcpp node interface enterprise_node provides features above.
 
 ## design
@@ -417,3 +417,10 @@ protoros2 software stability
 
 - [ ] add system_test
 - [ ] add ci
+
+## bugs
+
+rmw_ecal/ecal
+
+- [ ] ros2 run example_proto_publisher/subscriber: [Service Server] Service shutting down: Operation aborted.
+- [ ] ros2 run example_proto_publisher/subscriber: free(): invalid pointer [ros2run]: Aborted

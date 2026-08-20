@@ -62,14 +62,20 @@ TEST_F(TestEnterpriseNodeIntegration, TestFlatChannelRoutingAndAccessors)
   ASSERT_NE(pub, nullptr);
   EXPECT_EQ(pub->get_raw_publisher(), nullptr);
   EXPECT_EQ(pub->get_publisher_base(), nullptr);
-  EXPECT_NE(pub->get_iox_publisher(), nullptr);
+  EXPECT_NE(pub->get_backend_handle(), nullptr);
   EXPECT_TRUE(pub->is_bypass_channel());
+  EXPECT_TRUE(pub->is_valid());
+  EXPECT_EQ(pub->publish_fail_count(), 0u);
+  EXPECT_STREQ(pub->get_topic_name(), "/flat_routing_topic");
 
   auto sub = node_->create_flat_subscription<protoros2_test::msg::pb::BasicTypes>(
     "flat_routing_topic", 10, [](const protoros2_test::msg::pb::BasicTypes &) {});
   ASSERT_NE(sub, nullptr);
   EXPECT_EQ(sub->get_subscription_base(), nullptr);
   EXPECT_NE(sub->get_backend_handle(), nullptr);
+  EXPECT_NE(sub->get_guard_condition(), nullptr);
+  EXPECT_NE(sub->get_waitable(), nullptr);
+  EXPECT_TRUE(sub->is_valid());
   EXPECT_STREQ(sub->get_topic_name(), "/flat_routing_topic");
   EXPECT_TRUE(sub->is_bypass_channel());
 

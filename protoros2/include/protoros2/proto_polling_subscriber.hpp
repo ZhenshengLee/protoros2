@@ -53,12 +53,18 @@ private:
   std::optional<rclcpp::Time> timestamp_{std::nullopt};
 
 public:
+  /// Drain-and-keep-latest (autoware semantics): consumes every queued sample and keeps
+  /// only the newest. When no new sample arrived, the previously cached one is returned.
   std::shared_ptr<const ProtoMsgT> take_data()
   {
     auto * sub = static_cast<ProtoPollingSubscriber<ProtoMsgT, RosMsgT, polling_policy::Latest> *>(this);
     ProtoMsgT new_data;
     rclcpp::MessageInfo message_info;
-    if (sub->subscriber()->take(new_data, message_info)) {
+    bool got_any = false;
+    while (sub->subscriber()->take(new_data, message_info)) {
+      got_any = true;
+    }
+    if (got_any) {
       data_ = std::make_shared<ProtoMsgT>(std::move(new_data));
       timestamp_ = rclcpp::Time(message_info.get_rmw_message_info().source_timestamp, RCL_ROS_TIME);
     }

@@ -43,6 +43,14 @@ public:
   ProtoSubscription(rclcpp::SubscriptionBase::SharedPtr sub_base, bool is_protobuf_native)
   : sub_base_(std::move(sub_base)), is_protobuf_native_(is_protobuf_native)
   {
+    // Resolve the typed subscription once up front so take() does not pay a dynamic_cast
+    // per call on the polling path.
+    if (!is_protobuf_native_ && sub_base_) {
+      if constexpr (
+        std::is_same_v<ProtoMsgT, RosMsgT> || rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::is_specialized::value) {
+        proto_sub_ = dynamic_cast<rclcpp::Subscription<ProtoMsgT> *>(sub_base_.get());
+      }
+    }
   }
 
   /**
@@ -66,25 +74,14 @@ public:
         return out_msg.ParseFromArray(rcl_msg.buffer, static_cast<int>(rcl_msg.buffer_length));
       }
     } else {
-      if constexpr (
-        std::is_same_v<ProtoMsgT, RosMsgT> || rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::is_specialized::value) {
-        auto * proto_sub = dynamic_cast<rclcpp::Subscription<ProtoMsgT> *>(sub_base_.get());
-        if (proto_sub) {
-          ProtoMsgT taken_msg;
-          if (proto_sub->take(taken_msg, message_info)) {
-            out_msg = std::move(taken_msg);
-            return true;
-          }
-        }
-      } else {
-        auto * ros_sub = dynamic_cast<rclcpp::Subscription<RosMsgT> *>(sub_base_.get());
-        if (ros_sub) {
-          RosMsgT taken_ros;
-          if (ros_sub->take(taken_ros, message_info)) {
-            out_msg.Clear();
-            rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::convert_to_custom_type(taken_ros, out_msg);
-            return true;
-          }
+      static_assert(
+        std::is_same_v<ProtoMsgT, RosMsgT> || rclcpp::TypeAdapter<ProtoMsgT, RosMsgT>::is_specialized::value,
+        "ProtoSubscription::take requires ProtoMsgT == RosMsgT or a rclcpp::TypeAdapter specialization");
+      if (proto_sub_) {
+        ProtoMsgT taken_msg;
+        if (proto_sub_->take(taken_msg, message_info)) {
+          out_msg = std::move(taken_msg);
+          return true;
         }
       }
     }
@@ -111,6 +108,8 @@ public:
 
 private:
   rclcpp::SubscriptionBase::SharedPtr sub_base_;
+  // Cached typed view of sub_base_ (Track B only); lifetime covered by sub_base_.
+  rclcpp::Subscription<ProtoMsgT> * proto_sub_{nullptr};
   bool is_protobuf_native_{false};
 };
 

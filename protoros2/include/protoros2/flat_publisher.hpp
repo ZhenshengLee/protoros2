@@ -33,10 +33,11 @@ namespace protoros2
 
 /**
  * @brief FlatPublisher represents the high-performance bypass communication channel
- * for zero-copy / shared memory transmission based on Iceoryx and FlatBuffers.
+ * for zero-copy / shared memory transmission based on iceoryx2.
  *
- * FlatPublisher bypasses multi-layered rclcpp serialization overhead by utilizing
- * native Iceoryx untyped publishers and FlatBuffers zero-copy packaging.
+ * FlatPublisher bypasses multi-layered rclcpp serialization overhead by loaning iceoryx2
+ * shared memory and serializing the Protobuf payload directly into it (no framing, no
+ * intermediate copy).
  *
  * @tparam ProtoMsgT The C++ Protobuf message class.
  * @tparam RosMsgT The ROS 2 message struct class (defaults to ProtoMsgT).
@@ -47,8 +48,11 @@ class FlatPublisher
 public:
   using SharedPtr = std::shared_ptr<FlatPublisher<ProtoMsgT, RosMsgT>>;
 
-  explicit FlatPublisher(std::shared_ptr<details::EnterpriseNodeBackend> node_backend, const std::string & topic_name)
-  : topic_name_(topic_name), backend_(details::create_flat_publisher_backend(node_backend, topic_name))
+  explicit FlatPublisher(
+    std::shared_ptr<details::EnterpriseNodeBackend> node_backend, const std::string & topic_name,
+    size_t max_payload_bytes = kDefaultMaxFlatPayloadBytes)
+  : topic_name_(topic_name),
+    backend_(details::create_flat_publisher_backend(node_backend, topic_name, max_payload_bytes))
   {
     if (topic_name_.empty() || topic_name_[0] != '/') {
       topic_name_ = "/" + topic_name_;
@@ -56,24 +60,10 @@ public:
 
     const char * rmw_format = rmw_get_serialization_format();
     is_protobuf_native_ = (rmw_format != nullptr && std::string(rmw_format) == "protobuf");
-#if defined(PROTO_SSOT_ONLY)
-    is_protobuf_native_ = true;
-#endif
-
-    if (backend_) {
-      backend_->offer();
-    }
-  }
-
-  ~FlatPublisher()
-  {
-    if (backend_) {
-      backend_->stop_offer();
-    }
   }
 
   /**
-   * @brief Publish a Protobuf message instance over the Iceoryx + FlatBuffers bypass channel.
+   * @brief Publish a Protobuf message instance over the iceoryx2 bypass channel.
    *
    * @param proto_msg The Protobuf message to publish.
    */
@@ -83,9 +73,6 @@ public:
       throw std::runtime_error("FlatPublisher underlying backend is null");
     }
 
-#if defined(PROTO_SSOT_ONLY)
-    backend_->publish_protobuf(proto_msg);
-#else
     if constexpr (std::is_base_of_v<google::protobuf::Message, ProtoMsgT>) {
       backend_->publish_protobuf(proto_msg);
     } else {
@@ -95,7 +82,6 @@ public:
         "complex types is not supported over Flat channel.");
       backend_->publish_raw(&proto_msg, sizeof(ProtoMsgT));
     }
-#endif
   }
 
   /// Get the raw underlying rclcpp::Publisher instance (always null for pure Flat/Iceoryx bypass channel).
@@ -104,10 +90,16 @@ public:
   /// Get the underlying publisher as PublisherBase (always null for pure Flat/Iceoryx bypass channel).
   rclcpp::PublisherBase::SharedPtr get_publisher_base() const { return nullptr; }
 
-  /// Get the native Iceoryx UntypedPublisher instance.
+  /// Get an opaque handle to the underlying iceoryx2 publisher for advanced bypass inspection.
   void * get_backend_handle() const { return backend_ ? backend_->get_backend_handle() : nullptr; }
 
-  /// Check whether the current RMW is running in native Protobuf mode or PROTO_SSOT_ONLY.
+  /// True when the bypass channel was fully established; false means publishes will fail.
+  bool is_valid() const { return backend_ && backend_->valid(); }
+
+  /// Number of publishes dropped so far due to loan/serialize/send failures.
+  size_t publish_fail_count() const { return backend_ ? backend_->publish_fail_count() : 0; }
+
+  /// Check whether the current RMW is running in native Protobuf mode.
   bool is_protobuf_native() const { return is_protobuf_native_; }
 
   /// Check whether this publisher is operating as a high-performance bypass / flat channel.
@@ -121,7 +113,7 @@ public:
     return topic_name_.c_str();
   }
 
-  /// Get subscription count on this topic (using Iceoryx subscriber awareness).
+  /// Subscriber count awareness is not exposed by the iceoryx2 publisher API; always 0.
   size_t get_subscription_count() const { return 0; }
 
 private:

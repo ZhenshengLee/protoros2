@@ -27,6 +27,9 @@
 namespace protoros2
 {
 
+/// Default upper bound for a single flat-channel payload (iceoryx2 slice size).
+inline constexpr size_t kDefaultMaxFlatPayloadBytes = 10 * 1024 * 1024;
+
 enum class FlatSubscriptionMode
 {
   CallbackPush = 0,
@@ -40,14 +43,16 @@ class FlatPublisherBackend
 {
 public:
   virtual ~FlatPublisherBackend() = default;
-  virtual void offer() = 0;
-  virtual void stop_offer() = 0;
   virtual void publish_protobuf(const google::protobuf::Message & proto_msg) = 0;
   virtual void publish_raw(const void * data, size_t size) = 0;
   virtual void * get_backend_handle() const = 0;
+  /// Number of publishes dropped due to loan/serialize/send failures.
+  virtual size_t publish_fail_count() const = 0;
+  /// True when all underlying middleware entities were created successfully.
+  virtual bool valid() const = 0;
 };
 
-using FlatPayloadCallback = std::function<void(const void * payload, size_t size, bool is_flatbuffer_vec)>;
+using FlatPayloadCallback = std::function<void(const void * payload, size_t size)>;
 
 class FlatSubscriptionBackend
 {
@@ -58,20 +63,25 @@ public:
   virtual bool take_payload(FlatPayloadCallback processor) = 0;
   virtual rclcpp::GuardCondition::SharedPtr get_guard_condition() const = 0;
   virtual void * get_backend_handle() const = 0;
+  /// True when all underlying middleware entities were created successfully.
+  virtual bool valid() const = 0;
 };
 
 class EnterpriseNodeBackend
 {
 public:
   virtual ~EnterpriseNodeBackend() = default;
+  /// True when the underlying middleware node and waitset were created successfully.
+  virtual bool valid() const = 0;
 };
 
 std::shared_ptr<EnterpriseNodeBackend> create_enterprise_node_backend(const std::string & node_name);
 
 std::unique_ptr<FlatPublisherBackend> create_flat_publisher_backend(
-  std::shared_ptr<EnterpriseNodeBackend> node_backend, const std::string & topic_name);
+  std::shared_ptr<EnterpriseNodeBackend> node_backend, const std::string & topic_name,
+  size_t max_payload_bytes = kDefaultMaxFlatPayloadBytes);
 
-std::unique_ptr<FlatSubscriptionBackend> create_flat_subscription_backend(
+std::shared_ptr<FlatSubscriptionBackend> create_flat_subscription_backend(
   std::shared_ptr<EnterpriseNodeBackend> node_backend, const std::string & topic_name, FlatSubscriptionMode mode,
   FlatPayloadCallback callback);
 

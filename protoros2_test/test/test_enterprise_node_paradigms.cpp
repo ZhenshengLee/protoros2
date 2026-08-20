@@ -155,6 +155,45 @@ TEST_F(TestEnterpriseNodeParadigms, TestFlatSubscriptionCallbackGroupRegistratio
   EXPECT_TRUE(called);
 }
 
+TEST_F(TestEnterpriseNodeParadigms, TestFlatSubscriptionDestroySafetyWithExecutor)
+{
+  rclcpp::executors::SingleThreadedExecutor exec;
+  exec.add_node(node_);
+
+  auto pub = node_->create_flat_publisher<protoros2_test::msg::pb::BasicTypes>("flat_destroy_safety", 10);
+  {
+    auto cb_group = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    rclcpp::SubscriptionOptions sub_opt;
+    sub_opt.callback_group = cb_group;
+
+    std::atomic<int> received{0};
+    auto sub = node_->create_flat_subscription<protoros2_test::msg::pb::BasicTypes>(
+      "flat_destroy_safety", 10, [&](const protoros2_test::msg::pb::BasicTypes &) { received++; }, sub_opt);
+    ASSERT_NE(sub, nullptr);
+
+    protoros2_test::msg::pb::BasicTypes send_msg;
+    send_msg.set_string_value("destroy safety");
+    auto start_time = std::chrono::steady_clock::now();
+    while (received.load() == 0 && std::chrono::steady_clock::now() - start_time < std::chrono::seconds(2)) {
+      pub->publish(send_msg);
+      exec.spin_some();
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    EXPECT_GT(received.load(), 0);
+    // sub is destroyed here while the executor may still reference its waitable
+  }
+
+  // Spinning after the subscription is destroyed must not touch dangling state.
+  protoros2_test::msg::pb::BasicTypes send_msg;
+  send_msg.set_string_value("after destroy");
+  for (int i = 0; i < 10; ++i) {
+    pub->publish(send_msg);
+    exec.spin_some();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  SUCCEED();
+}
+
 TEST_F(TestEnterpriseNodeParadigms, TestProtoPollingSubscriber)
 {
   auto pub = node_->create_proto_publisher<protoros2_test::msg::pb::BasicTypes>("proto_polling_test", 10);
@@ -188,4 +227,35 @@ TEST_F(TestEnterpriseNodeParadigms, TestProtoPollingSubscriber)
   }
 
   EXPECT_TRUE(received);
+}
+
+TEST_F(TestEnterpriseNodeParadigms, TestProtoPollingLatestDrainsToNewest)
+{
+  auto pub = node_->create_proto_publisher<protoros2_test::msg::pb::BasicTypes>("proto_polling_drain", 10);
+  ASSERT_NE(pub, nullptr);
+
+  auto sub = protoros2::ProtoPollingSubscriber<protoros2_test::msg::pb::BasicTypes>::create_subscription(
+    node_.get(), "proto_polling_drain", rclcpp::QoS(10));
+  ASSERT_NE(sub, nullptr);
+
+  for (int i = 1; i <= 3; ++i) {
+    protoros2_test::msg::pb::BasicTypes send_msg;
+    send_msg.set_string_value("drain");
+    send_msg.set_int32_value(i);
+    pub->publish(send_msg);
+  }
+
+  // Wait until all three samples are queued, then a single take_data() must drain to the newest.
+  std::shared_ptr<const protoros2_test::msg::pb::BasicTypes> latest;
+  auto start_time = std::chrono::steady_clock::now();
+  while (std::chrono::steady_clock::now() - start_time < std::chrono::seconds(2)) {
+    latest = sub->take_data();
+    if (latest && latest->int32_value() == 3) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  ASSERT_NE(latest, nullptr);
+  EXPECT_EQ(latest->int32_value(), 3);
+  EXPECT_EQ(latest->string_value(), "drain");
 }
