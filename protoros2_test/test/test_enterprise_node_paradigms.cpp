@@ -155,6 +155,39 @@ TEST_F(TestEnterpriseNodeParadigms, TestFlatSubscriptionCallbackGroupRegistratio
   EXPECT_TRUE(called);
 }
 
+TEST_F(TestEnterpriseNodeParadigms, TestFlatSubscriptionDestroyWhileDispatchInFlight)
+{
+  auto pub = node_->create_flat_publisher<protoros2_test::msg::pb::BasicTypes>("flat_destroy_inflight", 10);
+  ASSERT_NE(pub, nullptr);
+
+  std::atomic<bool> stop{false};
+  std::thread fast_publisher([&]() {
+    protoros2_test::msg::pb::BasicTypes msg;
+    msg.set_string_value("in-flight dispatch stress");
+    msg.set_int32_value(7);
+    while (!stop.load()) {
+      pub->publish(msg);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  });
+
+  // Repeatedly create/destroy CallbackPush subscriptions while samples keep arriving, so
+  // destruction races in-flight dispatch on the backend poll thread. Any use-after-free
+  // of the subscription state would crash here.
+  for (int i = 0; i < 30; ++i) {
+    std::atomic<int> received{0};
+    auto sub = node_->create_flat_subscription<protoros2_test::msg::pb::BasicTypes>(
+      "flat_destroy_inflight", 10, [&](const protoros2_test::msg::pb::BasicTypes &) { received++; });
+    ASSERT_NE(sub, nullptr);
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    sub.reset();
+  }
+
+  stop.store(true);
+  fast_publisher.join();
+  SUCCEED();
+}
+
 TEST_F(TestEnterpriseNodeParadigms, TestFlatSubscriptionDestroySafetyWithExecutor)
 {
   rclcpp::executors::SingleThreadedExecutor exec;

@@ -141,7 +141,7 @@ if(BUILD_TESTING AND BUILD_ENTERPRISE_TESTS AND NOT PROTO_SSOT_ONLY)
   proto2ros_vendor_package(${PROJECT_NAME}
     PROTO_SSOT_ONLY
     IMPORT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}"
-    PROTOS "msg/BasicTypes.proto"
+    PROTOS "msg/BasicTypes.proto" "msg/BenchBytes.proto"
   )
   rosidl_get_typesupport_target(cpp_interfaces ${PROJECT_NAME} "rosidl_typesupport_cpp")
   rosidl_get_typesupport_target(protobuf_cpp_interfaces ${PROJECT_NAME} "rosidl_typesupport_protobuf_cpp")
@@ -173,6 +173,8 @@ if (BUILD_TESTING AND (PROTO_SSOT_ONLY OR BUILD_ENTERPRISE_TESTS))
       test/test_enterprise_node_paradigms.cpp)
 
   protoros2_test_add_gtest(test_waitable test/test_waitable.cpp)
+
+  protoros2_test_add_gtest(test_zero_copy_parse test/test_zero_copy_parse.cpp)
 endif()
 
 ament_package()

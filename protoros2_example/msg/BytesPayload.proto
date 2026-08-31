@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+// must follow: <ros2_package_name>.<folder_name>.pb
+package protoros2_example.msg.pb;
+// not necessary: enabled by default
+option cc_enable_arenas = true;
+
+// Parameterizable bytes payload for protobuf serdes benchmarking:
+// - shallow large:   one big blob (e.g. 3 MB x 1 chunk @ 10 Hz)
+// - repeated medium: medium blob split into many chunks (e.g. 16 KB x 64 @ 30 Hz)
+// - high-rate small: one small blob (e.g. 2 KB x 1 chunk @ 200 Hz)
+//
+// The layout is deliberately .msg-representable (no nested arrays / no proto imports
+// beyond well-known types) so the benchmark pair builds in ucA/ucB.1/ucB.2 alike.
+// repeated chunk_hashes keeps a repeated-field parse workload in the medium tier and
+// doubles as per-chunk integrity data (FNV-1a of each chunk).
+message BytesPayload {
+  google.protobuf.Timestamp timestamp = 1;
+  uint64 seq = 2;
+  bytes data = 3;
+  uint32 chunk_count = 4;
+  repeated uint64 chunk_hashes = 5;
+}

@@ -8,20 +8,21 @@ zero-intrusive protobuf support for ros2.
 
 ### motivation
 
+- in 2017, [the developer of apollo suggest using protobuf in ros1(ros_comm) ](https://github.com/ros/ros_comm/issues/1085)
 - in 2013, the [ros2 design artical: ROS2 Message Research](https://design.ros2.org/articles/serialization.html) suggest that Serialization should be optional, and should use existing library
 - the arch of ros2 derives from [ros2 design artical: ROS on DDS](https://design.ros2.org/articles/ros_on_dds.html), but there is a clear trend that serialization agnostic middleware like iceoryx, ecal, and zenoh are becoming popular.
 - the report [eprosima: Apache Thrift vs Protocol Buffers vs Fast Buffers](https://www.eprosima.com/developer-resources/performance/apache-thrift-vs-protocol-buffers-vs-fast-buffers) shows that the performance of fastcdr better than protobuf(v2.5) in pubsub benchmark, but new high-performance features have been introduced, including [protobuf: arenas](https://protobuf.dev/reference/cpp/arenas/), [protobuf: String View APIs](https://protobuf.dev/reference/cpp/string-view/), [protobuf: ctype=CORD](https://protobuf.dev/news/2023-04-11/), [protobuf: New RepeatedPtrField Layout](https://protobuf.dev/news/2025-09-19/#cpp-repeatedptrfield-layout)
 - protobuf is backed by Google and widely used across the AI industry.
-- many robotics/sdv/ai middlewares are using protobuf, like [the developer of apollo suggest using protobuf in ros1(ros_comm) in 2017](https://github.com/ros/ros_comm/issues/1085)
 - protobuf has traditional advantages such as ease of use, version compatibility, multi-language support, edge/cloud/mcu compatibility.
+- many robotics/sdv middlewares are using protobuf, like w----e, h-----n, etc.
 
 ### related work
 
-early work:
+use protobuf in ROS1:
 
 - [ros_protobuf: using protobuf in ROS1](https://github.com/Karsten1987/ros_protobuf/)
 
-recent work:
+use protobuf in ROS2:
 
 - [eclipse-ecal: rosidl_typesupport_protobuf](https://github.com/eclipse-ecal/rosidl_typesupport_protobuf) (and many forks)
 - [google: ros-central-registry: the protobuf cpp example of bazel ros2](https://github.com/intrinsic-opensource/ros-central-registry/blob/main/examples)
@@ -336,17 +337,41 @@ ros2 run protoros2_example enterprise_flat_subscriber
 #### ucC.3 image transport benchmark
 
 ```sh
-
-```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+# A/B: -p channel_type:=proto (publisher and subscriber must use the same channel_type)
 ros2 run protoros2_example enterprise_image_listener --ros-args -p decode_and_verify:=false
 ```
 
 ```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+# A/B: -p channel_type:=proto (publisher and subscriber must use the same channel_type)
 # 1080p (3.3 MB JPEG)
 ros2 run protoros2_example enterprise_image_talker --ros-args -p image_path:=1920_1080.jpg -p frequency:=10.0
 
 # 4k(5 MB JPEG)
 ros2 run protoros2_example enterprise_image_talker --ros-args -p image_path:=6000_4000.jpg -p frequency:=5.0
+```
+
+#### ucC.4 protobuf parsing benchmark
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+# listener prints per-window stats and a BENCH SUMMARY on exit (use -p zero_copy_parse:=false for A/B)
+# A/B: -p channel_type:=proto (publisher and subscriber must use the same channel_type)
+ros2 run protoros2_example enterprise_bytes_listener
+```
+
+```sh
+export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
+# A/B: -p channel_type:=proto (publisher and subscriber must use the same channel_type)
+# shallow large (3 MB x 1 @ 10 Hz)
+ros2 run protoros2_example enterprise_bytes_talker --ros-args -p payload_size:=3145728 -p chunk_count:=1 -p frequency:=10.0
+
+# repeated medium (16 KB x 64 @ 30 Hz)
+ros2 run protoros2_example enterprise_bytes_talker --ros-args -p payload_size:=1048576 -p chunk_count:=64 -p frequency:=30.0
+
+# high-rate small (2 KB x 1 @ 200 Hz)
+ros2 run protoros2_example enterprise_bytes_talker --ros-args -p payload_size:=2048 -p chunk_count:=1 -p frequency:=200.0
 ```
 
 ### usecaseD: replace default rclcpp::node with enterprise node
@@ -403,17 +428,32 @@ the name of the repo is inspired by [flatros2](https://github.com/Ekumen-OS/flat
 
 ## todo
 
-protobuf serdes performance
+### protobuf serdes performance
 
-- [ ] ctype=CORD (not support in ubuntu 26.04 default apt package)
-- [ ] ctype=string_view
+#### protobuf parsing api
 
-protoros2 software components
+baseline: ParseFromString with ubuntu 26.04 apt package version 3.21.12
+
+- [x] ParseFromArray
+- [ ] ParseFromZeroCopyStream + Aliasing (not available in protobuf 3.21.12)
+- [ ] ctype=CORD (available in protobuf v23.0)
+- [ ] ctype=string_view (available in protobuf edition 2023 v26.0)
+
+#### protobuf memory alloc api
+
+baseline: thread_local cache
+
+- [ ] Arena
+- [ ] placement-new Arena
+
+### protoros2 software components
+
+baseline: rmw_ecal_proto_cpp + ecal(v5.13 prebuilt with pb3.21.7)
 
 - [x] enterprise_flat use iceoryx2 backend
 - [ ] rmw_zenoh_proto_cpp support
 
-protoros2 software stability
+### protoros2 software stability
 
 - [ ] add system_test
 - [ ] add ci

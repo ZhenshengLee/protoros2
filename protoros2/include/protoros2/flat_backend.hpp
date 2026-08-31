@@ -58,7 +58,10 @@ class FlatSubscriptionBackend
 {
 public:
   virtual ~FlatSubscriptionBackend() = default;
-  virtual void subscribe() = 0;
+  /// Attach the listener to the node waitset. on_data_event is invoked on the backend poll
+  /// thread after the event is drained and the guard condition is triggered; the hook is
+  /// responsible for its own lifetime guarding (callers pass a weak-guarded closure).
+  virtual void subscribe(std::function<void()> on_data_event) = 0;
   virtual bool has_data() const = 0;
   virtual bool take_payload(FlatPayloadCallback processor) = 0;
   virtual rclcpp::GuardCondition::SharedPtr get_guard_condition() const = 0;
@@ -82,8 +85,7 @@ std::unique_ptr<FlatPublisherBackend> create_flat_publisher_backend(
   size_t max_payload_bytes = kDefaultMaxFlatPayloadBytes);
 
 std::shared_ptr<FlatSubscriptionBackend> create_flat_subscription_backend(
-  std::shared_ptr<EnterpriseNodeBackend> node_backend, const std::string & topic_name, FlatSubscriptionMode mode,
-  FlatPayloadCallback callback);
+  std::shared_ptr<EnterpriseNodeBackend> node_backend, const std::string & topic_name);
 
 }  // namespace details
 }  // namespace protoros2

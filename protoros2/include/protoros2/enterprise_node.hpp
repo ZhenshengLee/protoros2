@@ -67,16 +67,14 @@ public:
   }
 
   explicit EnterpriseNode(const std::string & node_name, const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
-  : rclcpp::Node(node_name, apply_enterprise_defaults(options)),
-    flat_backend_(details::create_enterprise_node_backend(node_name))
+  : rclcpp::Node(node_name, apply_enterprise_defaults(options))
   {
   }
 
   explicit EnterpriseNode(
     const std::string & node_name, const std::string & namespace_,
     const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
-  : rclcpp::Node(node_name, namespace_, apply_enterprise_defaults(options)),
-    flat_backend_(details::create_enterprise_node_backend(node_name))
+  : rclcpp::Node(node_name, namespace_, apply_enterprise_defaults(options))
   {
   }
 
@@ -258,6 +256,11 @@ public:
    * @param topic_name The topic name to publish on.
    * @param qos Quality of Service settings.
    * @param options Publisher options.
+   * @param max_payload_bytes Upper bound for a single payload; oversized publishes are
+   *   dropped (see FlatPublisher::publish_fail_count). NOTE: iceoryx2 fixes the service
+   *   configuration when the FIRST participant creates it, so if another process already
+   *   created the topic's service, a larger value here has no effect - deploy the largest
+   *   payload participant first or keep the limits consistent across processes.
    * @return Shared pointer to the created FlatPublisher.
    */
   template <typename ProtoMsgT, typename RosMsgT = ProtoMsgT>
@@ -268,7 +271,8 @@ public:
   {
     (void)options;
     warn_if_qos_not_honored(qos, "FlatPublisher", topic_name);
-    auto pub = std::make_shared<FlatPublisher<ProtoMsgT, RosMsgT>>(flat_backend_, topic_name, max_payload_bytes);
+    auto pub =
+      std::make_shared<FlatPublisher<ProtoMsgT, RosMsgT>>(ensure_flat_backend(), topic_name, max_payload_bytes);
     if (!pub->is_valid()) {
       RCLCPP_WARN(
         this->get_logger(), "FlatPublisher on '%s' is not functional: iceoryx2 backend setup failed",
@@ -331,8 +335,9 @@ public:
         "(shared_ptr<T>[, MessageInfo])");
     };
 
-    auto sub = std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(flat_backend_, topic_name, cb_wrapper, mode);
-    sub->bind_waitable_back_reference(sub);
+    auto sub =
+      std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(ensure_flat_backend(), topic_name, cb_wrapper, mode);
+    sub->activate(sub);
     if (!sub->is_valid()) {
       RCLCPP_WARN(
         this->get_logger(), "FlatSubscription on '%s' is not functional: iceoryx2 backend setup failed",
@@ -362,8 +367,9 @@ public:
   {
     warn_if_qos_not_honored(qos, "FlatSubscription", topic_name);
     std::function<void(const ProtoMsgT &)> empty_cb = nullptr;
-    auto sub = std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(flat_backend_, topic_name, empty_cb, mode);
-    sub->bind_waitable_back_reference(sub);
+    auto sub =
+      std::make_shared<FlatSubscription<ProtoMsgT, RosMsgT>>(ensure_flat_backend(), topic_name, empty_cb, mode);
+    sub->activate(sub);
     if (!sub->is_valid()) {
       RCLCPP_WARN(
         this->get_logger(), "FlatSubscription on '%s' is not functional: iceoryx2 backend setup failed",
@@ -376,6 +382,16 @@ public:
   }
 
 private:
+  // The iceoryx2 backend (node + waitset) is created lazily on first flat-channel use:
+  // proto-only nodes must not pay its startup cost, SHM footprint or config warnings.
+  std::shared_ptr<details::EnterpriseNodeBackend> ensure_flat_backend()
+  {
+    if (!flat_backend_) {
+      flat_backend_ = details::create_enterprise_node_backend(this->get_name());
+    }
+    return flat_backend_;
+  }
+
   // The iceoryx2 bypass channel is best-effort / latest-wins by design and cannot apply
   // rclcpp QoS policies; surface a warning instead of silently discarding user settings.
   void warn_if_qos_not_honored(const rclcpp::QoS & qos, const char * api, const std::string & topic_name)

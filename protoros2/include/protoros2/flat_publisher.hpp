@@ -90,7 +90,8 @@ public:
   /// Get the underlying publisher as PublisherBase (always null for pure Flat/Iceoryx bypass channel).
   rclcpp::PublisherBase::SharedPtr get_publisher_base() const { return nullptr; }
 
-  /// Get an opaque handle to the underlying iceoryx2 publisher for advanced bypass inspection.
+  /// Get an opaque handle to the underlying iceoryx2 publisher for advanced bypass
+  /// inspection. Read-only: callers must not modify the referenced object.
   void * get_backend_handle() const { return backend_ ? backend_->get_backend_handle() : nullptr; }
 
   /// True when the bypass channel was fully established; false means publishes will fail.

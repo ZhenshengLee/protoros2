@@ -23,8 +23,8 @@
 #include <type_traits>
 #include <utility>
 
-#include "google/protobuf/io/zero_copy_stream_impl_lite.h"
 #include "google/protobuf/message.h"
+#include "google/protobuf/stubs/stringpiece.h"
 #include "protoros2/flat_backend.hpp"
 
 #include "rclcpp/guard_condition.hpp"
@@ -170,65 +170,118 @@ public:
       }
     });
 
-    backend_ = details::create_flat_subscription_backend(
-      node_backend, topic_name_, mode_, [this](const void * payload, size_t size) {
-        if (!payload || size == 0) {
-          return;
-        }
-        if constexpr (std::is_base_of_v<google::protobuf::Message, ProtoMsgT>) {
-          this->cached_msg_.Clear();
-          if (this->cached_msg_.ParseFromArray(payload, static_cast<int>(size))) {
-            if (this->callback_) {
-              this->callback_(this->cached_msg_);
-            }
-          } else {
-            RCLCPP_ERROR(
-              rclcpp::get_logger("FlatSubscription"),
-              "Failed to parse Protobuf message from flat payload (payload size: %zu)", size);
-          }
-        } else {
-          static_assert(
-            std::is_trivially_copyable_v<ProtoMsgT>,
-            "FlatSubscription only supports Protobuf messages or trivially copyable POD types! "
-            "TypeAdapter mapping for complex types is not supported over Flat channel.");
-          if (size == sizeof(ProtoMsgT)) {
-            ProtoMsgT msg;
-            std::memcpy(&msg, payload, sizeof(ProtoMsgT));
-            if (this->callback_) {
-              this->callback_(msg);
-            }
-          } else {
-            RCLCPP_ERROR(
-              rclcpp::get_logger("FlatSubscription"),
-              "Flat payload size %zu does not match POD type size %zu, dropping (publisher/subscriber type "
-              "mismatch?)",
-              size, sizeof(ProtoMsgT));
-          }
-        }
-        if (waitable_) {
-          waitable_->trigger_ready();
-        }
-      });
-
-    if (backend_) {
-      backend_->subscribe();
-    }
+    backend_ = details::create_flat_subscription_backend(node_backend, topic_name_);
+    // Listener registration is deferred to activate(): it must capture a weak_ptr to this
+    // subscription, which is only available once the factory owns it via shared_ptr.
   }
 
   /**
-   * @internal Bind the waitable's weak back-reference. Must be called by the creating
-   * factory (EnterpriseNode) immediately after this object is owned by a shared_ptr:
-   * the executor may outlive the subscription and would otherwise dereference a dangling
-   * pointer through the waitable. Weak binding makes such late access degrade to
-   * not-ready/no-data instead of undefined behavior.
+   * @internal Must be called by the creating factory (EnterpriseNode) immediately after
+   * this object is owned by a shared_ptr. Completes the two-phase construction:
+   * - binds the waitable's weak back-reference, so late executor access after destruction
+   *   degrades to not-ready/no-data instead of undefined behavior;
+   * - registers the iceoryx2 listener with an event hook capturing a weak_ptr to this
+   *   subscription, so in-flight dispatch on the backend poll thread can never touch a
+   *   destroyed subscription (the hook is dropped when the lock fails).
    */
-  void bind_waitable_back_reference(const std::shared_ptr<FlatSubscription> & self)
+  void activate(const std::shared_ptr<FlatSubscription> & self)
   {
     if (waitable_) {
       waitable_->set_subscription(self);
     }
+    if (backend_) {
+      std::weak_ptr<FlatSubscription> weak_sub = self;
+      backend_->subscribe([weak_sub]() {
+        if (auto sub = weak_sub.lock()) {
+          sub->drain_pending_payloads();
+        }
+      });
+    }
   }
 
+  /**
+   * @brief Enable/disable zero-copy (aliasing) parsing on the callback dispatch path.
+   *
+   * When enabled, Protobuf bytes/string fields are parsed as direct views into the
+   * shared-memory payload instead of being copied (ParseFrom<kParseWithAliasing>).
+   * Contract: the viewed buffer is only alive during the callback invocation - the
+   * message (or pointers into its bytes fields) must not outlive the callback.
+   *
+   * Applies to CallbackPush dispatch only; the pull paths (take()/WaitSetPull) always
+   * copy, since the payload buffer is released when the pull returns.
+   */
+  void set_zero_copy_parse(bool enabled) { zero_copy_parse_ = enabled; }
+
+private:
+  /// Parse/forward one raw payload to the user callback and notify the waitable bridge.
+  void process_payload(const void * payload, size_t size)
+  {
+    if (!payload || size == 0) {
+      return;
+    }
+    if constexpr (std::is_base_of_v<google::protobuf::Message, ProtoMsgT>) {
+      if (zero_copy_parse_) {
+        // Aliasing parse: bytes/string fields become direct views into the payload buffer,
+        // which is alive for this entire dispatch call chain. The parsed message therefore
+        // must not outlive the user callback (same contract as const& callbacks).
+        ProtoMsgT aliased_msg;
+        if (aliased_msg.template ParseFrom<google::protobuf::MessageLite::kParseWithAliasing>(
+              google::protobuf::StringPiece(static_cast<const char *>(payload), size))) {
+          if (callback_) {
+            callback_(aliased_msg);
+          }
+        } else {
+          RCLCPP_ERROR(
+            rclcpp::get_logger("FlatSubscription"),
+            "Failed to parse Protobuf message from flat payload (payload size: %zu)", size);
+        }
+      } else {
+        cached_msg_.Clear();
+        if (cached_msg_.ParseFromArray(payload, static_cast<int>(size))) {
+          if (callback_) {
+            callback_(cached_msg_);
+          }
+        } else {
+          RCLCPP_ERROR(
+            rclcpp::get_logger("FlatSubscription"),
+            "Failed to parse Protobuf message from flat payload (payload size: %zu)", size);
+        }
+      }
+    } else {
+      static_assert(
+        std::is_trivially_copyable_v<ProtoMsgT>,
+        "FlatSubscription only supports Protobuf messages or trivially copyable POD types! "
+        "TypeAdapter mapping for complex types is not supported over Flat channel.");
+      if (size == sizeof(ProtoMsgT)) {
+        ProtoMsgT msg;
+        std::memcpy(&msg, payload, sizeof(ProtoMsgT));
+        if (callback_) {
+          callback_(msg);
+        }
+      } else {
+        RCLCPP_ERROR(
+          rclcpp::get_logger("FlatSubscription"),
+          "Flat payload size %zu does not match POD type size %zu, dropping (publisher/subscriber type "
+          "mismatch?)",
+          size, sizeof(ProtoMsgT));
+      }
+    }
+    if (waitable_) {
+      waitable_->trigger_ready();
+    }
+  }
+
+  /// CallbackPush drain invoked from the backend poll thread via the weak-guarded event hook.
+  void drain_pending_payloads()
+  {
+    if (mode_ != FlatSubscriptionMode::CallbackPush || !callback_ || !backend_) {
+      return;
+    }
+    while (backend_->take_payload([this](const void * payload, size_t size) { process_payload(payload, size); })) {
+    }
+  }
+
+public:
   /**
    * @brief Take one message directly from the underlying Iceoryx queue without callback dispatch.
    * Useful in Polling Subscriber and WaitSet pull patterns.
@@ -319,7 +372,8 @@ public:
   /// Get the raw underlying rclcpp::Subscription instance (always null for pure Flat/Iceoryx bypass channel).
   std::shared_ptr<void> get_raw_subscription() const { return nullptr; }
 
-  /// Get the backend handle for advanced bypass inspections.
+  /// Get the backend handle for advanced bypass inspections. Read-only: callers must not
+  /// modify the referenced object.
   void * get_backend_handle() const { return backend_ ? backend_->get_backend_handle() : nullptr; }
 
   const char * get_topic_name() const
@@ -341,6 +395,10 @@ private:
   std::string topic_name_;
   FlatSubscriptionMode mode_;
   bool is_protobuf_native_{false};
+  // Aliasing parse by default: equivalent to copy parsing on protobuf 3.21.12 (the flag
+  // does not actually alias there, verified), and becomes true zero-copy automatically on
+  // protobuf versions that support it. The callback-scoped lifetime contract is unchanged.
+  bool zero_copy_parse_{true};
   std::function<void(const ProtoMsgT &)> callback_;
   ProtoMsgT cached_msg_;
   std::shared_ptr<details::FlatSubscriptionBackend> backend_;

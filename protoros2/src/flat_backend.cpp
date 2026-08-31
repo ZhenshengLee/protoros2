@@ -302,10 +302,8 @@ class FlatSubscriptionBackendImpl : public FlatSubscriptionBackend,
                                     public std::enable_shared_from_this<FlatSubscriptionBackendImpl>
 {
 public:
-  FlatSubscriptionBackendImpl(
-    std::shared_ptr<EnterpriseNodeBackend> node_backend, const std::string & topic_name, FlatSubscriptionMode mode,
-    FlatPayloadCallback callback)
-  : node_backend_(node_backend), topic_name_(topic_name), mode_(mode), callback_(std::move(callback))
+  FlatSubscriptionBackendImpl(std::shared_ptr<EnterpriseNodeBackend> node_backend, const std::string & topic_name)
+  : node_backend_(node_backend), topic_name_(topic_name)
   {
     std::string clean_topic = topic_name_.empty() ? "" : (topic_name_[0] == '/' ? topic_name_.substr(1) : topic_name_);
     std::replace(clean_topic.begin(), clean_topic.end(), '/', '_');
@@ -368,8 +366,9 @@ public:
     }
   }
 
-  void subscribe() override
+  void subscribe(std::function<void()> on_data_event) override
   {
+    on_data_event_ = std::move(on_data_event);
     if (listener_.has_value()) {
       auto backend_impl = std::dynamic_pointer_cast<EnterpriseNodeBackendImpl>(node_backend_);
       if (backend_impl) {
@@ -434,22 +433,15 @@ private:
       guard_condition_->trigger();
     }
 
-    if (mode_ == FlatSubscriptionMode::CallbackPush && callback_) {
-      while (subscriber_.has_value()) {
-        auto res = subscriber_->has_samples();
-        if (res.has_value() && res.value()) {
-          take_payload(callback_);
-        } else {
-          break;
-        }
-      }
+    // Payload processing lives in the owning FlatSubscription; the hook guards its lifetime.
+    if (on_data_event_) {
+      on_data_event_();
     }
   }
 
   std::shared_ptr<EnterpriseNodeBackend> node_backend_;
   std::string topic_name_;
-  FlatSubscriptionMode mode_;
-  FlatPayloadCallback callback_;
+  std::function<void()> on_data_event_;
 
   iox2::bb::Optional<iox2::Subscriber<iox2::ServiceType::Ipc, iox2::bb::Slice<uint8_t>, void>> subscriber_;
   iox2::bb::Optional<iox2::Listener<iox2::ServiceType::Ipc>> listener_;
@@ -464,10 +456,9 @@ std::unique_ptr<FlatPublisherBackend> create_flat_publisher_backend(
 }
 
 std::shared_ptr<FlatSubscriptionBackend> create_flat_subscription_backend(
-  std::shared_ptr<EnterpriseNodeBackend> node_backend, const std::string & topic_name, FlatSubscriptionMode mode,
-  FlatPayloadCallback callback)
+  std::shared_ptr<EnterpriseNodeBackend> node_backend, const std::string & topic_name)
 {
-  return std::make_shared<FlatSubscriptionBackendImpl>(node_backend, topic_name, mode, std::move(callback));
+  return std::make_shared<FlatSubscriptionBackendImpl>(node_backend, topic_name);
 }
 
 }  // namespace details
