@@ -1,6 +1,6 @@
 # protoros2
 
-for Chinese readers, please refer to [简体中文](README.zh.md)
+for Chinese readers, please refer to [简体中文](README_zh.md)
 
 ## introduction
 
@@ -419,6 +419,10 @@ export RMW_IMPLEMENTATION=rmw_ecal_proto_cpp
 
 ros2 run protoros2_example enterprise_proto_intra_demo
 ```
+
+## discussion
+
+- [discussion on ros discourse](https://discourse.openrobotics.org/t/announcing-protoros2-use-protobuf-in-ros2-without-compromise/57152)
 
 ## acknowledgement
 
